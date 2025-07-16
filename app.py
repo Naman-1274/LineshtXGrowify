@@ -77,7 +77,7 @@ if not GEMINI_API_KEY:
     ai_enabled = False
 else:
     st.markdown('<div class="ai-status ai-enabled">✅ AI Features Enabled - Gemini 2.5 Flash Ready</div>', unsafe_allow_html=True)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('models/gemini-2.5-flash')
     ai_enabled = True
 
 # ── 3) Enhanced Sidebar Configuration ──────────────────────────────────
@@ -92,7 +92,7 @@ with st.sidebar:
             "Simple mode (first sentence + tags)",
             "Full AI mode (custom description + tags)"
         ],
-        index=0 if not ai_enabled else 2,
+        index=0 if not ai_enabled else 1,
         disabled=not ai_enabled,
         help="Choose how you want to process product descriptions"
     )
@@ -190,7 +190,7 @@ except Exception as e:
     st.error(f"❌ Could not load file: {e}")
     st.stop()
 
-# ── 2) AI Helper Functions ────────────────────────────────────────────
+# ── 6) AI Helper Functions ────────────────────────────────────────────
 
 def refine_and_tag(text: str) -> tuple[str, str]:
     if not ai_enabled:
@@ -299,6 +299,19 @@ if process_button or 'processed_data' in st.session_state:
         
         df = pd.DataFrame(df_exploded_list)
         
+        # ── Corrected Handle Generation ──
+        # Generate handles based on title + sku combination
+        df["Handle"] = (df["title"].astype(str).str.strip() + "-" + 
+                        df.get("product code", pd.Series(dtype=str)).fillna("").astype(str).str.strip())
+
+        # Clean handles for Shopify format
+        df["Handle"] = (df["Handle"]
+                        .str.replace(r"[^\w\s-]", "", regex=True)  # Remove special chars
+                        .str.replace(r"\s+", "-", regex=True)      # Replace spaces with dashes
+                        .str.lower()
+                        .str.replace(r"-+", "-", regex=True)       # Remove multiple dashes
+                        .str.strip("-"))                           # Remove leading/trailing dashes
+        
         # Store processed data in session state
         st.session_state.processed_data = df
         st.session_state.variant_quantities = {}
@@ -309,20 +322,23 @@ if process_button or 'processed_data' in st.session_state:
     # ── 8) Interactive Quantity Management ──────────────────────────────
     st.markdown('<div class="step-header"><h2>🧮 Step 3: Set Inventory Quantities</h2></div>', unsafe_allow_html=True)
     
-    # Get unique variants with better handling - only once
+    # ── Updated unique variants logic for quantity management ──
     if 'unique_variants_processed' not in st.session_state:
         unique_variants = []
         variant_products = {}
         
-        for _, row in df.iterrows():
-            size = str(row['sizes_list']).strip()
-            color = str(row['colours_list']).strip()
-            title = str(row['title']).strip()
+        # Group by handle first, then get variants
+        for handle, group in df.groupby("Handle"):
+            title = group.iloc[0]["title"]  # Get product title from first row
             
-            variant_key = (size, color, title)
-            if variant_key not in unique_variants:
-                unique_variants.append(variant_key)
-                variant_products[variant_key] = title
+            for _, row in group.iterrows():
+                size = str(row['sizes_list']).strip()
+                color = str(row['colours_list']).strip()
+                
+                variant_key = (size, color, title)
+                if variant_key not in unique_variants:
+                    unique_variants.append(variant_key)
+                    variant_products[variant_key] = title
         
         st.session_state.unique_variants = unique_variants
         st.session_state.variant_products = variant_products
@@ -448,47 +464,127 @@ if process_button or 'processed_data' in st.session_state:
     
     df["Variant Inventory Qty"] = df["_variant_key"].map(variant_qty_map).fillna(0).astype(int)
 
-    # Generate handles and build final dataset - optimized
-    df["_base_handle"] = (df["title"].astype(str).str.strip()
-                         .str.replace(r"[^\w\s-]", "", regex=True)  # Remove special chars
-                         .str.replace(r"\s+", "-", regex=True)      # Replace spaces
-                         .str.lower())
-    
-    # Create unique serials for each unique handle - vectorized
-    unique_handles = df["_base_handle"].unique()
-    handle_serial_map = {h: str(idx+1).zfill(2) for idx, h in enumerate(unique_handles)}
-    df["_serial"] = df["_base_handle"].map(handle_serial_map)
-    df["Handle"] = df["_base_handle"] + "-" + df["_serial"]
+    # ── Corrected Final Dataset Generation ──
+    # Group variants by Handle to create proper Shopify structure
+    grouped_data = []
 
-    # Build final Shopify dataset with better error handling
-    out = pd.DataFrame({
-        "Handle": df["Handle"],
-        "Title": df["title"],
-        "Body (HTML)": "<p>" + df["custom_description"].astype(str) + "</p>",
-        "Vendor": vendor_name,
-        "Product Category": df.get("product category", pd.Series(dtype=str)).fillna(""),
-        "Type": df.get("type", pd.Series(dtype=str)).fillna(""),
-        "Tags": df["ai_tags"],
-        "Published": df.get("published", pd.Series(dtype=str)).astype(str).str.lower().eq("active").map({True:"TRUE",False:"FALSE"}),
-        "Option1 Name": "Size",
-        "Option1 Value": df["sizes_list"],
-        "Option2 Name": "Color", 
-        "Option2 Value": df["colours_list"],
-        "Variant SKU": (df.get("product code", pd.Series(dtype=str)).fillna("").astype(str) + "-" + 
-                       df["_serial"].astype(str) + "-" + 
-                       df["sizes_list"].astype(str) + "-" + 
-                       df["colours_list"].astype(str)),
-        "Variant Grams": 0,
-        "Variant Inventory Tracker": df.get("Variant Inventory Tracker", pd.Series(dtype=str)).fillna(""),
-        "Variant Inventory Qty": df["Variant Inventory Qty"],
-        "Variant Inventory Policy": df.get("Variant Inventory Policy", pd.Series(dtype=str)).fillna(""),
-        "Variant Fulfillment Service": "manual",
-        "Variant Price": pd.to_numeric(df.get("Variant Price", pd.Series(dtype=float)), errors='coerce').fillna(0),
-        "Variant Compare At Price": pd.to_numeric(df.get("Variant Compare At Price", pd.Series(dtype=float)), errors='coerce').fillna(0),
-        "Variant Requires Shipping": "TRUE",
-        "Variant Taxable": "TRUE",
-        "Status": df.get("Status", pd.Series(dtype=str)).fillna("")
-    })
+    for handle, group in df.groupby("Handle"):
+        # Sort group to ensure consistent ordering
+        group = group.sort_values(["sizes_list", "colours_list"])
+        
+        # Get product-level information from first row
+        first_row = group.iloc[0]
+        
+        # Create first row with complete product information
+        first_variant = {
+            "Handle": handle,
+            "Title": first_row["title"],
+            "Body (HTML)": f"<p>{first_row['custom_description']}</p>",
+            "Vendor": vendor_name,
+            "Product Category": first_row.get("product category", ""),
+            "Type": first_row.get("type", ""),
+            "Tags": first_row["ai_tags"],
+            "Published": "TRUE" if str(first_row.get("published", "")).lower() == "active" else "FALSE",
+            "Option1 Name": "Size",
+            "Option1 Value": first_row["sizes_list"],
+            "Option2 Name": "Color",
+            "Option2 Value": first_row["colours_list"],
+            "Option3 Name": "",
+            "Option3 Value": "",
+            "Variant SKU": f"{first_row.get('product code', '')}-{first_row['sizes_list']}",
+            "Variant Grams": 0,
+            "Variant Inventory Tracker": first_row.get("Variant Inventory Tracker", ""),
+            "Variant Inventory Qty": first_row["Variant Inventory Qty"],
+            "Variant Inventory Policy": first_row.get("Variant Inventory Policy", ""),
+            "Variant Fulfillment Service": "manual",
+            "Variant Price": pd.to_numeric(first_row.get("Variant Price", 0), errors='coerce') or 0,
+            "Variant Compare At Price": pd.to_numeric(first_row.get("Variant Compare At Price", 0), errors='coerce') or 0,
+            "Variant Requires Shipping": "TRUE",
+            "Variant Taxable": "TRUE",
+            "Image Src": first_row.get("Image Src", ""),
+            "Image Position": first_row.get("Image Position", ""),
+            "Image Alt Text": first_row.get("Image Alt Text", ""),
+            "Gift Card": "FALSE",
+            "SEO Title": first_row.get("SEO Title", ""),
+            "SEO Description": first_row.get("SEO Description", ""),
+            "Google Shopping / Google Product Category": first_row.get("Google Shopping / Google Product Category", ""),
+            "Google Shopping / Gender": first_row.get("Google Shopping / Gender", ""),
+            "Google Shopping / Age Group": first_row.get("Google Shopping / Age Group", ""),
+            "Google Shopping / MPN": first_row.get("Google Shopping / MPN", ""),
+            "Google Shopping / AdWords Grouping": first_row.get("Google Shopping / AdWords Grouping", ""),
+            "Google Shopping / AdWords Labels": first_row.get("Google Shopping / AdWords Labels", ""),
+            "Google Shopping / Condition": first_row.get("Google Shopping / Condition", ""),
+            "Google Shopping / Custom Product": first_row.get("Google Shopping / Custom Product", ""),
+            "Google Shopping / Custom Label 0": first_row.get("Google Shopping / Custom Label 0", ""),
+            "Google Shopping / Custom Label 1": first_row.get("Google Shopping / Custom Label 1", ""),
+            "Google Shopping / Custom Label 2": first_row.get("Google Shopping / Custom Label 2", ""),
+            "Google Shopping / Custom Label 3": first_row.get("Google Shopping / Custom Label 3", ""),
+            "Google Shopping / Custom Label 4": first_row.get("Google Shopping / Custom Label 4", ""),
+            "Variant Image": first_row.get("Variant Image", ""),
+            "Variant Weight Unit": first_row.get("Variant Weight Unit", ""),
+            "Variant Tax Code": first_row.get("Variant Tax Code", ""),
+            "Cost per item": pd.to_numeric(first_row.get("Cost per item", 0), errors='coerce') or 0,
+            "Status": first_row.get("Status", "active")
+        }
+        
+        grouped_data.append(first_variant)
+        
+        # Create subsequent rows for remaining variants (if any)
+        for _, row in group.iloc[1:].iterrows():
+            variant_row = {
+                "Handle": handle,
+                "Title": "",  # Empty for additional variants
+                "Body (HTML)": "",
+                "Vendor": "",
+                "Product Category": "",
+                "Type": "",
+                "Tags": "",
+                "Published": "",
+                "Option1 Name": "",
+                "Option1 Value": row["sizes_list"],
+                "Option2 Name": "",
+                "Option2 Value": row["colours_list"],
+                "Option3 Name": "",
+                "Option3 Value": "",
+                "Variant SKU": f"{row.get('product code', '')}-{row['sizes_list']}",
+                "Variant Grams": 0,
+                "Variant Inventory Tracker": "",
+                "Variant Inventory Qty": row["Variant Inventory Qty"],
+                "Variant Inventory Policy": "",
+                "Variant Fulfillment Service": "manual",
+                "Variant Price": pd.to_numeric(row.get("Variant Price", 0), errors='coerce') or 0,
+                "Variant Compare At Price": pd.to_numeric(row.get("Variant Compare At Price", 0), errors='coerce') or 0,
+                "Variant Requires Shipping": "TRUE",
+                "Variant Taxable": "TRUE",
+                "Image Src": "",
+                "Image Position": "",
+                "Image Alt Text": "",
+                "Gift Card": "",
+                "SEO Title": "",
+                "SEO Description": "",
+                "Google Shopping / Google Product Category": "",
+                "Google Shopping / Gender": "",
+                "Google Shopping / Age Group": "",
+                "Google Shopping / MPN": "",
+                "Google Shopping / AdWords Grouping": "",
+                "Google Shopping / AdWords Labels": "",
+                "Google Shopping / Condition": "",
+                "Google Shopping / Custom Product": "",
+                "Google Shopping / Custom Label 0": "",
+                "Google Shopping / Custom Label 1": "",
+                "Google Shopping / Custom Label 2": "",
+                "Google Shopping / Custom Label 3": "",
+                "Google Shopping / Custom Label 4": "",
+                "Variant Image": "",
+                "Variant Weight Unit": "",
+                "Variant Tax Code": "",
+                "Cost per item": 0,
+                "Status": ""
+            }
+            grouped_data.append(variant_row)
+
+    # Create the final output dataframe
+    out = pd.DataFrame(grouped_data)
 
     # ── 9) Results Display ──────────────────────────────────────────
     st.markdown('<div class="step-header"><h2>📊 Step 4: Review & Download</h2></div>', unsafe_allow_html=True)
