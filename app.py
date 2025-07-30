@@ -455,7 +455,7 @@ if process_button or 'processed_data' in st.session_state:
                     
                     original = clean_value(row.get("description", ""))
                     if mode == "Default template (no AI)":
-                        desc = f"{clean_value(row.get('title', ''))} - {clean_value(row.get('product category', ''))}"
+                        desc = f"{clean_value(row.get('title', ''))}"
                         tags = ""
                     elif mode == "Simple mode (first sentence + tags)":
                         first_sent = original.split(".", 1)[0].strip()
