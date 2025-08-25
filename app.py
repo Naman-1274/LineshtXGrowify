@@ -325,7 +325,7 @@ with st.sidebar:
 # ── 4) File Upload Section ──────────────────────────────────────────
 st.markdown('<div class="step-header"><h2>📁 Step 1: Upload Your Product Data</h2></div>', unsafe_allow_html=True)
 
-col1, col2, col3 = st.columns([2, 1, 1])
+col1, col2, col3 = st.columns([200, 1, 1])
 
 with col1:
     uploaded_file = st.file_uploader(
