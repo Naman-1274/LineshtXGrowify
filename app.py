@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import numpy as np
 
-# ── 1) Init GenAI Client ──────────────────────────────────────────────────
+# ── 1) Init GenAI Client ────────────────────────────────────────────────────
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
-# ── Helper Functions ──────────────────────────────────────────────────────
+# ── Helper Functions ────────────────────────────────────────────────────────
 def clean_value(value, is_numeric=False, default_numeric=0):
     """Clean values to avoid NaN in output"""
     if pd.isna(value) or value == 'nan' or value == 'NaN' or str(value).strip() == '':
@@ -144,7 +144,40 @@ def process_variants_with_inventory(df_raw):
     
     return pd.DataFrame(df_exploded_list)
 
-# ── 2) Enhanced UI Setup ─────────────────────────────────────────────
+def generate_structured_body_html(row):
+    
+    # Extract and clean values
+    description = clean_value(row.get('custom_description', ''))
+    fabric = clean_value(row.get('fabric', ''))
+    celebs_name = clean_value(row.get('celebs_name', ''))
+    no_of_components = clean_value(row.get('no of components', ''))
+    product_code = clean_value(row.get('product code', ''))
+    fit = clean_value(row.get('fit', ''))
+    sizes_info = clean_value(row.get('sizes_info', ''))
+    colors = clean_value(row.get('colour', ''))
+    
+    html_parts = []
+    
+    if description:
+        html_parts.append(f"<p>{description}</p>")
+    if fabric:
+        html_parts.append(f"<p><strong>Fabric</strong>:- {fabric}</p>")
+    if celebs_name:
+        html_parts.append(f"<p><strong>Celebs Name</strong>:- {celebs_name}</p>")
+    if no_of_components:
+        html_parts.append(f"<p><strong>No of components (set)</strong>:- {no_of_components}</p>")
+    if colors:
+        html_parts.append(f"<p><strong>Color</strong>:- {colors}</p>")
+    if product_code:
+        html_parts.append(f"<p><strong>SKU</strong>:- {product_code}</p>")
+    if fit:
+        html_parts.append(f"<p><strong>Fit</strong>:- {fit}</p>")
+    if sizes_info:
+        html_parts.append(f"<p><strong>Sizes (surcharges if any)</strong>:- {sizes_info}</p>")
+    
+    return "".join(html_parts) if html_parts else ""
+
+# ── 2) Enhanced UI Setup ────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Shopify Import Builder", 
     page_icon="🛍️", 
@@ -215,7 +248,7 @@ else:
     model = genai.GenerativeModel('models/gemini-2.5-flash')
     ai_enabled = True
 
-# ── 3) Enhanced Sidebar Configuration ──────────────────────────────────
+# ── 3) Enhanced Sidebar Configuration ──────────────────────────────────────
 with st.sidebar:
     st.markdown("## ⚙️ Configuration")
     
@@ -290,14 +323,9 @@ with st.sidebar:
     st.markdown("---")
     
     # Enhanced file format info
-    with st.expander("📋 Size Data Format", expanded=False):
+    with st.expander("📋 File Format Requirements", expanded=False):
         st.markdown("""
-        **Size Format Examples:**
-        - `S-4,M-8,L-12,XL-16` → Sizes: S,M,L,XL with Quantities: 4,8,12,16
-        - `XS-0,S-5,M-10,L-15,XL-20` → Auto-extracts quantities
-        - `Custom,Small,Medium,Large` → Uses fallback quantity
-        
-        **Other Required Columns:**
+        **Required Columns:**
         - `title` - Product name
         - `description` - Product description  
         - `colour` - Colors (comma-separated)
@@ -305,6 +333,14 @@ with st.sidebar:
         - `product category` - Category
         - `type` - Product type
         - `published` - Status (active/inactive)
+        - `size` - Size format: `S-4,M-8,L-12,XL-16`
+        - `no of components` - Number of components/pieces
+        - `fabric` - Fabric type/material
+        
+        **Size Format Examples:**
+        - `S-4,M-8,L-12,XL-16` → Sizes: S,M,L,XL with Quantities: 4,8,12,16
+        - `XS-0,S-5,M-10,L-15,XL-20` → Auto-extracts quantities
+        - `Custom,Small,Medium,Large` → Uses fallback quantity
         """)
     
     # Processing tips
@@ -315,14 +351,16 @@ with st.sidebar:
         2. **Smart Sorting**: Sizes ordered as XS, S, M, L, XL, XXL, etc.
         3. **Manual Override**: You can adjust any extracted quantities
         4. **Bulk Options**: Override extracted quantities if needed
+        5. **Components & Fabric**: Added as custom properties for better product info
         
         **Best Practices:**
         - Use consistent size format: `SIZE-QUANTITY`
         - Check extracted quantities before processing
         - Use bulk mode only when you want same qty for all
+        - Fill in fabric and components data for better product details
         """)
 
-# ── 4) File Upload Section ──────────────────────────────────────────
+# ── 4) File Upload Section ──────────────────────────────────────────────────
 st.markdown('<div class="step-header"><h2>📁 Step 1: Upload Your Product Data</h2></div>', unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([200, 1, 1])
@@ -348,7 +386,7 @@ if not uploaded_file:
     st.info("👆 Please upload a CSV or Excel file to get started")
     st.stop()
 
-# ── 5) Load & Preview Data ──────────────────────────────────────────
+# ── 5) Load & Preview Data ──────────────────────────────────────────────────
 try:
     df_raw = pd.read_excel(uploaded_file) if uploaded_file.name.lower().endswith(".xlsx") else pd.read_csv(uploaded_file)
     
@@ -385,7 +423,7 @@ except Exception as e:
     st.error(f"❌ Could not load file: {e}")
     st.stop()
 
-# ── 6) AI Helper Functions ────────────────────────────────────────────
+# ── 6) AI Helper Functions ──────────────────────────────────────────────────
 
 def refine_and_tag(text: str) -> tuple[str, str]:
     if not ai_enabled:
@@ -428,7 +466,7 @@ def tags_only(text: str) -> str:
         st.warning(f"⚠️ AI tag generation failed: {e}")
         return ""
 
-# ── 7) Processing Section ──────────────────────────────────────────
+# ── 7) Processing Section ──────────────────────────────────────────────────
 st.markdown('<div class="step-header"><h2>🚀 Step 2: Process Your Data</h2></div>', unsafe_allow_html=True)
 
 process_button = st.button("🔄 Start Processing", type="primary", use_container_width=True)
@@ -455,7 +493,7 @@ if process_button or 'processed_data' in st.session_state:
                     
                     original = clean_value(row.get("description", ""))
                     if mode == "Default template (no AI)":
-                        desc = f"{clean_value(row.get('title', ''))}"
+                        desc = f"{clean_value(row.get('description', ''))}"
                         tags = ""
                     elif mode == "Simple mode (first sentence + tags)":
                         first_sent = original.split(".", 1)[0].strip()
@@ -498,7 +536,7 @@ if process_button or 'processed_data' in st.session_state:
         # Use existing processed data
         df = st.session_state.processed_data
 
-    # ── 8) Enhanced Inventory and Compare Price Management ──────────────────────────────
+    # ── 8) Enhanced Inventory and Compare Price Management ──────────────────────
     st.markdown('<div class="step-header"><h2>🧮 Step 3: Manage Inventory & Pricing</h2></div>', unsafe_allow_html=True)
     
     # ── Updated unique variants logic with extracted quantities ──
@@ -551,34 +589,12 @@ if process_button or 'processed_data' in st.session_state:
         variant_key = f"{size}|{color}|{title}"
         extracted_qty = extracted_quantities.get((size, color, title), 0)
         
-        # FORCE MAPPING: If we have extracted quantity, always use it (unless user has manually changed it)
         if extracted_qty > 0:
             # Only update if current value is still the default (meaning user hasn't manually changed it)
             current_value = st.session_state.variant_quantities.get(variant_key, default_qty)
             if current_value == default_qty or variant_key not in st.session_state.variant_quantities:
                 st.session_state.variant_quantities[variant_key] = extracted_qty
 
-    # Show extraction summary
-    if any(extracted_quantities.values()):
-        st.info("📊 Inventory quantities have been extracted from your size data and pre-populated. You can adjust them below.")
-        
-        # Show extracted quantities summary
-        with st.expander("📋 Extracted Inventory Summary", expanded=False):
-            summary_data = []
-            for (size, color, title), qty in extracted_quantities.items():
-                if qty > 0:  # Only show sizes that had quantities
-                    summary_data.append({
-                        'Product': title,
-                        'Size': size,
-                        'Color': color if color else 'N/A',
-                        'Extracted Quantity': qty
-                    })
-            
-            if summary_data:
-                summary_df = pd.DataFrame(summary_data)
-                st.dataframe(summary_df, use_container_width=True)
-
-    # Bulk mode handling (simplified)
     if bulk_qty_mode:
         st.info(f"📦 Bulk mode enabled: Setting {bulk_qty} for all variants")
         for size, color, title in unique_variants:
@@ -604,8 +620,7 @@ if process_button or 'processed_data' in st.session_state:
         else:
             products_variants = st.session_state.products_variants_grouped
         
-        st.markdown("### 📝 Individual Variant Management")
-        st.markdown("*Adjust quantities and compare prices for each variant below*")
+        st.markdown("### 🔧 Individual Variant Management")
         
         # Create expandable sections for each product
         for product_title, variants in products_variants.items():
@@ -663,13 +678,11 @@ if process_button or 'processed_data' in st.session_state:
                     
                     # Submit button for this product
                     if st.form_submit_button(f"💾 Update {product_title}", use_container_width=True):
-                        # Batch update all variants for this product
                         for variant_key, (qty, compare_price) in variant_inputs.items():
                             st.session_state.variant_quantities[variant_key] = qty
                             st.session_state.variant_compare_prices[variant_key] = compare_price
                         st.success(f"✅ Updated quantities and prices for {product_title}")
         
-        # Enhanced table-based input for power users
         with st.expander("⚡ Power User: Spreadsheet-Style Editing", expanded=False):
             st.markdown("*Excel-like interface for bulk editing*")
             
@@ -742,72 +755,63 @@ if process_button or 'processed_data' in st.session_state:
     grouped_data = []
 
     for handle, group in df.groupby("Handle"):
-        # CRITICAL FIX 1: Sort variants properly by size order, then by color
-        # First, let's get the size order from the original data
         sizes_in_group = group['sizes_list'].unique()
         
-        # Use our existing sort function to get proper order
         sorted_sizes_for_group = []
         if len(sizes_in_group) > 0:
-            # Convert to comma-separated string and sort
             sizes_string = ','.join(sizes_in_group)
             sorted_sizes_for_group = sort_sizes(sizes_string)
         
-        # Create a size order mapping
         size_order_map = {size: idx for idx, size in enumerate(sorted_sizes_for_group)}
         
-        # Sort the group by size order, then by color
         def sort_key(row):
             size = row['sizes_list']
             color = row['colours_list']
             size_idx = size_order_map.get(size, 999)  # Unknown sizes go to end
             return (size_idx, color)
         
-        # Apply sorting to the group
         group_list = list(group.iterrows())
         group_list.sort(key=lambda x: sort_key(x[1]))
+
+        processed_rows = []
+        for orig_idx, row in group_list:
+            variant_key = f"{row['sizes_list']}|{row['colours_list']}|{row['title']}"
+            updated_row = row.copy()
+            
+            if variant_key in st.session_state.variant_quantities:
+                updated_row['Variant Inventory Qty'] = st.session_state.variant_quantities[variant_key]
+            if variant_key in st.session_state.variant_compare_prices:
+                updated_row['Variant Compare At Price'] = st.session_state.variant_compare_prices[variant_key]
+            
+            processed_rows.append(updated_row)
         
         # Get product-level information from first row
-        first_row = group_list[0][1]  # Get the row data from (index, row) tuple
-        
-        # CRITICAL FIX 2: Apply inventory quantities from session state before creating variants
-        for idx, (_, row) in enumerate(group_list):
-            variant_key = f"{row['sizes_list']}|{row['colours_list']}|{row['title']}"
-            if variant_key in st.session_state.variant_quantities:
-                # Update the row's inventory quantity
-                group_list[idx] = (_, row.copy())
-                group_list[idx][1]['Variant Inventory Qty'] = st.session_state.variant_quantities[variant_key]
-            if variant_key in st.session_state.variant_compare_prices:
-                # Update the row's compare price
-                if group_list[idx][1] is row:  # If we haven't copied yet
-                    group_list[idx] = (_, row.copy())
-                group_list[idx][1]['Variant Compare At Price'] = st.session_state.variant_compare_prices[variant_key]
-        
-        # Create first row with complete product information
-        first_row = group_list[0][1]  # Updated first row
+        first_row = processed_rows[0]
+        has_colors = any(clean_value(row["colours_list"]) for row in processed_rows)
         first_variant = {
             "Handle": clean_value(handle),
             "Title": clean_value(first_row["title"]),
-            "Body (HTML)": f"<p>{clean_value(first_row['custom_description'])}</p>" if clean_value(first_row['custom_description']) else "",
-            "Vendor": clean_value(vendor_name),
+            "Body (HTML)": generate_structured_body_html(first_row),
+            "Vendor": vendor_name,
             "Product Category": clean_value(first_row.get("product category", "")),
             "Type": clean_value(first_row.get("type", "")),
+            "Fabric": clean_value(first_row.get("fabric", "")),
             "Tags": clean_value(first_row["ai_tags"]),
             "Published": "TRUE" if str(clean_value(first_row.get("published", ""))).lower() == "active" else "FALSE",
             "Option1 Name": "Size",
             "Option1 Value": clean_value(first_row["sizes_list"]),
-            "Option2 Name": "Color",
+            "Option2 Name": "Color" if has_colors else "",
             "Option2 Value": clean_value(first_row["colours_list"]),
             "Option3 Name": "",
             "Option3 Value": "",
-            "Variant SKU": f"{clean_value(first_row.get('product code', ''))}-{clean_value(first_row['sizes_list'])}",
+            "Variant SKU": f"{clean_value(first_row.get('product code', ''))}",
             "Variant Grams": clean_value(0, is_numeric=True),
             "Variant Inventory Tracker": clean_value(first_row.get("Variant Inventory Tracker", "")),
             "Variant Inventory Qty": clean_value(first_row["Variant Inventory Qty"], is_numeric=True),
             "Variant Inventory Policy": inventory_policy,
             "Variant Fulfillment Service": "manual",
-            "Variant Price": clean_value(first_row.get("Variant Price", 0), is_numeric=True),
             "Variant Compare At Price": clean_value(first_row["Variant Compare At Price"], is_numeric=True),
+            "Variant Price": clean_value(first_row.get("Variant Price", 0), is_numeric=True),
             "Variant Requires Shipping": "TRUE",
             "Variant Taxable": "TRUE",
             "Image Src": clean_value(first_row.get("Image Src", "")),
@@ -847,6 +851,7 @@ if process_button or 'processed_data' in st.session_state:
                 "Vendor": "",
                 "Product Category": "",
                 "Type": "",
+                "Fabric": "",
                 "Tags": "",
                 "Published": "",
                 "Option1 Name": "",
@@ -855,14 +860,14 @@ if process_button or 'processed_data' in st.session_state:
                 "Option2 Value": clean_value(row["colours_list"]),
                 "Option3 Name": "",
                 "Option3 Value": "",
-                "Variant SKU": f"{clean_value(row.get('product code', ''))}-{clean_value(row['sizes_list'])}",
+                "Variant SKU": f"{clean_value(row.get('product code', ''))}",
                 "Variant Grams": clean_value(0, is_numeric=True),
                 "Variant Inventory Tracker": "",
                 "Variant Inventory Qty": clean_value(row["Variant Inventory Qty"], is_numeric=True),
                 "Variant Inventory Policy": inventory_policy,
                 "Variant Fulfillment Service": "manual",
-                "Variant Price": clean_value(row.get("Variant Price", 0), is_numeric=True),
                 "Variant Compare At Price": clean_value(row["Variant Compare At Price"], is_numeric=True),
+                "Variant Price": clean_value(row.get("Variant Price", 0), is_numeric=True),
                 "Variant Requires Shipping": "TRUE",
                 "Variant Taxable": "TRUE",
                 "Image Src": "",
@@ -888,7 +893,7 @@ if process_button or 'processed_data' in st.session_state:
                 "Variant Weight Unit": "",
                 "Variant Tax Code": "",
                 "Cost per item": clean_value(0, is_numeric=True),
-                "Status": ""
+                "Status": "" 
             }
             grouped_data.append(variant_row)
 
@@ -903,7 +908,7 @@ if process_button or 'processed_data' in st.session_state:
         else:  # Numeric columns
             out[col] = out[col].fillna(0)
 
-    # ── 9) Results Display ──────────────────────────────────────────
+    # ── 9) Results Display ──────────────────────────────────────────────────
     st.markdown('<div class="step-header"><h2>📊 Step 4: Review & Download</h2></div>', unsafe_allow_html=True)
     
     # Final statistics
@@ -920,8 +925,8 @@ if process_button or 'processed_data' in st.session_state:
         avg_price = out["Variant Price"].replace(0, pd.NA).mean()
         st.markdown('<div class="stats-box"><h3>{}</h3><p>Avg Price</p></div>'.format(f"${avg_price:.0f}" if pd.notna(avg_price) else "N/A"), unsafe_allow_html=True)
 
-    # Tabbed results view
-    tab1, tab2, tab3, tab4 = st.tabs(["📋 Final Preview", "📈 Inventory Summary", "🏷️ AI Tags Overview", "💰 Price Summary"])
+    # Tabbed results view - Updated with new columns
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Final Preview", "📈 Inventory Summary", "🏷️ AI Tags Overview", "💰 Price Summary", "🧵 Product Details"])
     
     with tab1:
         st.dataframe(out.head(20), use_container_width=True)
@@ -960,6 +965,31 @@ if process_button or 'processed_data' in st.session_state:
         except Exception as e:
             st.error(f"Error creating price summary: {e}")
             st.dataframe(out[["Handle", "Title", "Variant Price", "Variant Compare At Price"]], use_container_width=True)
+    
+    with tab5:
+        try:
+            details_df = out[out["Title"] != ""][["Title", "No of Components", "Fabric", "Type", "Product Category"]].drop_duplicates()
+            if len(details_df) > 0:
+                st.dataframe(details_df, use_container_width=True)
+                
+                # Show fabric and components statistics
+                if not details_df["Fabric"].str.strip().eq("").all():
+                    st.markdown("#### 🧵 Fabric Types:")
+                    fabric_counts = details_df["Fabric"].value_counts()
+                    fabric_counts = fabric_counts[fabric_counts.index != ""]  # Remove empty values
+                    if len(fabric_counts) > 0:
+                        st.bar_chart(fabric_counts)
+                
+                if not details_df["No of Components"].str.strip().eq("").all():
+                    st.markdown("#### 🔢 Components Distribution:")
+                    component_counts = details_df["No of Components"].value_counts()
+                    component_counts = component_counts[component_counts.index != ""]  # Remove empty values
+                    if len(component_counts) > 0:
+                        st.bar_chart(component_counts)
+            else:
+                st.info("No product details available")
+        except Exception as e:
+            st.error(f"Error creating details summary: {e}")
 
     # Download section
     csv_data = out.to_csv(index=False).encode("utf-8")
@@ -983,7 +1013,7 @@ if process_button or 'processed_data' in st.session_state:
             st.rerun()
 
     # Success message
-    st.success("🎉 Your Shopify CSV is ready! The file contains all variants with extracted inventory quantities and compare prices.")
+    st.success("🎉 Your Shopify CSV is ready! The file contains all variants with extracted inventory quantities, compare prices, components, and fabric information.")
     
     # Usage tips
     with st.expander("💡 Next Steps & Tips"):
@@ -1008,4 +1038,6 @@ if process_button or 'processed_data' in st.session_state:
         - **Individual Compare Prices**: Set compare-at prices for each variant individually
         - **Extraction Summary**: Shows what quantities were automatically detected
         - **Spreadsheet Editing**: Power users can edit in table format for bulk changes
+        - **NEW: Components & Fabric**: Includes number of components and fabric type information
+        - **Product Details Tab**: View fabric types and component distribution
         """)
