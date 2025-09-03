@@ -118,13 +118,35 @@ def sort_sizes(sizes_list):
     return sorted_sizes
 
 def process_variants_with_inventory(df_raw):
-    """Process variants and extract inventory quantities from size strings"""
+    """Process variants and extract both inventory quantities and compare prices from uploaded data"""
     df_exploded_list = []
     
     for _, row in df_raw.iterrows():
         # Parse sizes and extract quantities
         sorted_sizes, size_quantity_map = sort_sizes_with_quantities(clean_value(row.get("size", "")))
         colors = [c.strip() for c in str(clean_value(row.get("colour", ""))).split(",") if c.strip()]
+        
+        # Extract compare price from uploaded data (similar to how we extract quantities)
+        uploaded_compare_price = default_compare_price
+        
+        # Try different possible column names for compare price in uploaded data
+        compare_price_columns = [
+            'Variant Compare At Price', 'variant compare at price', 
+            'compare_price', 'Compare Price', 'compare price',
+            'Compare At Price', 'compare at price'
+        ]
+        
+        for col_name in compare_price_columns:
+            if col_name in row.index:  # Check if column exists in the row
+                raw_value = row.get(col_name)
+                if pd.notna(raw_value) and str(raw_value).strip() != '':
+                    try:
+                        numeric_value = float(str(raw_value).strip())
+                        if numeric_value >= 0:
+                            uploaded_compare_price = numeric_value
+                            break
+                    except (ValueError, TypeError):
+                        continue
         
         # If no sizes or colors, create default entries
         if not sorted_sizes:
@@ -140,9 +162,11 @@ def process_variants_with_inventory(df_raw):
                 new_row["sizes_list"] = size  # Just the size (S, M, L, XL)
                 new_row["colours_list"] = color
                 new_row["extracted_quantity"] = size_quantity_map.get(size, 0)  # Extracted quantity
+                new_row["uploaded_compare_price"] = uploaded_compare_price  # Extracted compare price
                 df_exploded_list.append(new_row)
     
     return pd.DataFrame(df_exploded_list)
+
 
 def generate_structured_body_html(row):
     
@@ -314,7 +338,7 @@ with st.sidebar:
     if bulk_compare_price_mode:
         bulk_compare_price = st.number_input(
             "Bulk Compare Price", 
-            min_value=0.0, 
+            min_value=0, 
             value=default_compare_price, 
             step=0.01, 
             format="%.2f"
@@ -402,6 +426,26 @@ try:
     with col4:
         active_products = sum(1 for _, row in df_raw.iterrows() if str(row.get('published', '')).lower() == 'active')
         st.markdown('<div class="stats-box"><h3>{}</h3><p>Active Products</p></div>'.format(active_products), unsafe_allow_html=True)
+    
+    # Check for missing or zero variant prices in uploaded data
+    if 'Variant Price' in df_raw.columns:
+        price_column = 'Variant Price'
+    elif 'price' in df_raw.columns:
+        price_column = 'price'
+    else:
+        price_column = None
+
+    if price_column:
+        zero_or_blank_prices = df_raw[
+            (df_raw[price_column] == 0) | 
+            (df_raw[price_column].isna()) | 
+            (df_raw[price_column] == "") |
+            (pd.to_numeric(df_raw[price_column], errors='coerce').fillna(0) == 0)
+        ]
+        
+        if len(zero_or_blank_prices) > 0:
+            total_products_with_zero_prices = len(zero_or_blank_prices)
+            st.warning(f"⚠️ **PRICE ALERT**: {total_products_with_zero_prices} out of {len(df_raw)} products have missing or zero prices in the '{price_column}' column. Please update your source data with proper pricing before processing to avoid Shopify import issues.")
     
     # Data preview with tabs
     tab1, tab2 = st.tabs(["📊 Data Preview", "🔍 Column Analysis"])
@@ -522,11 +566,11 @@ if process_button or 'processed_data' in st.session_state:
 
         # Clean handles for Shopify format
         df["Handle"] = (df["Handle"]
-                        .str.replace(r"[^\w\s-]", "", regex=True)  # Remove special chars
-                        .str.replace(r"\s+", "-", regex=True)      # Replace spaces with dashes
+                        .str.replace(r"[^\w\s-]", "", regex=True)
+                        .str.replace(r"\s+", "-", regex=True)
                         .str.lower()
-                        .str.replace(r"-+", "-", regex=True)       # Remove multiple dashes
-                        .str.strip("-"))                           # Remove leading/trailing dashes
+                        .str.replace(r"-+", "-", regex=True)
+                        .str.strip("-"))                           
         
         # Store processed data in session state
         st.session_state.processed_data = df
@@ -539,11 +583,11 @@ if process_button or 'processed_data' in st.session_state:
     # ── 8) Enhanced Inventory and Compare Price Management ──────────────────────
     st.markdown('<div class="step-header"><h2>🧮 Step 3: Manage Inventory & Pricing</h2></div>', unsafe_allow_html=True)
     
-    # ── Updated unique variants logic with extracted quantities ──
     if 'unique_variants_processed' not in st.session_state:
         unique_variants = []
         variant_products = {}
         extracted_quantities = {}
+        extracted_compare_prices = {}  # Initialize here
         
         # Group by handle first, then get variants
         for handle, group in df.groupby("Handle"):
@@ -553,47 +597,59 @@ if process_button or 'processed_data' in st.session_state:
                 size = clean_value(row['sizes_list'])
                 color = clean_value(row['colours_list'])
                 extracted_qty = row.get('extracted_quantity', 0)
+                extracted_compare_price = row.get('uploaded_compare_price', default_compare_price)
                 
                 variant_key = (size, color, title)
                 if variant_key not in unique_variants:
                     unique_variants.append(variant_key)
                     variant_products[variant_key] = title
                     extracted_quantities[variant_key] = extracted_qty
+                    extracted_compare_prices[variant_key] = extracted_compare_price
         
+        # Store ALL variables in session state at once
         st.session_state.unique_variants = unique_variants
         st.session_state.variant_products = variant_products
         st.session_state.extracted_quantities = extracted_quantities
+        st.session_state.extracted_compare_prices = extracted_compare_prices  # Store in session state
         st.session_state.unique_variants_processed = True
     else:
+        # Load ALL variables from session state
         unique_variants = st.session_state.unique_variants
         variant_products = st.session_state.variant_products
         extracted_quantities = st.session_state.extracted_quantities
+        extracted_compare_prices = st.session_state.extracted_compare_prices
 
-    # Initialize quantities and compare prices with extracted values
     if 'variant_quantities' not in st.session_state:
         st.session_state.variant_quantities = {}
-        # HARD MAP: Always use extracted quantities first, fallback to default only if no extraction
         for size, color, title in unique_variants:
             variant_key = f"{size}|{color}|{title}"
             extracted_qty = extracted_quantities.get((size, color, title), 0)
-            # HARD MAPPING: Use extracted quantity directly, or default if extraction is 0
             st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else default_qty
 
     if 'variant_compare_prices' not in st.session_state:
-        st.session_state.variant_compare_prices = {}    
+        st.session_state.variant_compare_prices = {}
         for size, color, title in unique_variants:
             variant_key = f"{size}|{color}|{title}"
-            st.session_state.variant_compare_prices[variant_key] = default_compare_price
+            extracted_compare_price = extracted_compare_prices.get((size, color, title), default_compare_price)
+            st.session_state.variant_compare_prices[variant_key] = extracted_compare_price
+
             
     for size, color, title in unique_variants:
         variant_key = f"{size}|{color}|{title}"
         extracted_qty = extracted_quantities.get((size, color, title), 0)
         
         if extracted_qty > 0:
-            # Only update if current value is still the default (meaning user hasn't manually changed it)
             current_value = st.session_state.variant_quantities.get(variant_key, default_qty)
             if current_value == default_qty or variant_key not in st.session_state.variant_quantities:
                 st.session_state.variant_quantities[variant_key] = extracted_qty
+                
+    for size, color, title in unique_variants:
+        variant_key = f"{size}|{color}|{title}"
+        extracted_compare_price = extracted_compare_prices.get((size, color, title), default_compare_price)
+        if extracted_compare_price > 0 and extracted_compare_price != default_compare_price:
+            current_value = st.session_state.variant_compare_prices.get(variant_key, default_compare_price)
+            if current_value == default_compare_price or variant_key not in st.session_state.variant_compare_prices:
+                st.session_state.variant_compare_prices[variant_key] = extracted_compare_price
 
     if bulk_qty_mode:
         st.info(f"📦 Bulk mode enabled: Setting {bulk_qty} for all variants")
@@ -609,7 +665,6 @@ if process_button or 'processed_data' in st.session_state:
 
     # Manual editing interface (enhanced)
     if not bulk_qty_mode or not bulk_compare_price_mode:
-        # Group variants by product for better organization
         if 'products_variants_grouped' not in st.session_state:
             products_variants = {}
             for size, color, title in unique_variants:
@@ -621,10 +676,7 @@ if process_button or 'processed_data' in st.session_state:
             products_variants = st.session_state.products_variants_grouped
         
         st.markdown("### 🔧 Individual Variant Management")
-        
-        # Create expandable sections for each product
         for product_title, variants in products_variants.items():
-            # Calculate summary stats for this product
             total_qty = 0
             total_variants = len(variants)
             
@@ -643,37 +695,41 @@ if process_button or 'processed_data' in st.session_state:
                         current_qty = st.session_state.variant_quantities.get(variant_key, default_qty)
                         current_compare_price = st.session_state.variant_compare_prices.get(variant_key, default_compare_price)
                         
-                        # Show extracted quantity if available
                         extracted_qty = extracted_quantities.get((size, color, product_title), 0)
+                        extracted_compare_price = extracted_compare_prices.get((size, color, product_title), default_compare_price)
+
                         col1, col2, col3 = st.columns([2, 2, 2])
-                        
+
                         with col1:
                             st.markdown(f"**{size} / {color if color else 'N/A'}**")
                             if extracted_qty > 0:
-                                st.caption(f"↗️ Extracted: {extracted_qty}")
-                        
+                                st.caption(f"↗️ Extracted Qty: {extracted_qty}")
+                            if extracted_compare_price > 0 and extracted_compare_price != default_compare_price:
+                                st.caption(f"💰 Extracted Compare: ${extracted_compare_price:.2f}")
+
                         with col2:
-                            
                             current_qty = st.session_state.variant_quantities.get(variant_key, default_qty)
                             qty = st.number_input(
                                 f"Quantity",
                                 min_value=0, 
-                                value=int(current_qty),  # Use session state value directly
+                                value=int(current_qty),
                                 step=1, 
                                 key=f"form_qty_{variant_key}_{hash(variant_key) % 10000}",
                                 help=f"Extracted from size data: {extracted_qty}" if extracted_qty > 0 else "Manual quantity"
                             )
-                        
+
                         with col3:
+                            current_compare_price = st.session_state.variant_compare_prices.get(variant_key, default_compare_price)
                             compare_price = st.number_input(
                                 f"Compare Price ($)",
                                 min_value=0.0,
                                 value=float(current_compare_price),
                                 step=0.01,
                                 format="%.2f",
-                                key=f"form_price_{variant_key}_{hash(variant_key) % 10000}"
+                                key=f"form_price_{variant_key}_{hash(variant_key) % 10000}",
+                                help=f"Extracted from uploaded data: ${extracted_compare_price:.2f}" if extracted_compare_price != default_compare_price else "Manual compare price"
                             )
-                        
+
                         variant_inputs[variant_key] = (qty, compare_price)
                     
                     # Submit button for this product
@@ -691,39 +747,41 @@ if process_button or 'processed_data' in st.session_state:
             for size, color, title in unique_variants:
                 variant_key = f"{size}|{color}|{title}"
                 extracted_qty = extracted_quantities.get((size, color, title), 0)
+                extracted_compare_price = extracted_compare_prices.get((size, color, title), default_compare_price)
                 
-                # Use current session state value (which should now contain extracted quantities)
                 current_qty = st.session_state.variant_quantities.get(variant_key, default_qty)
+                current_compare_price = st.session_state.variant_compare_prices.get(variant_key, default_compare_price)
                 
                 variant_data.append({
                     'Product': title,
                     'Size': size if size else 'N/A',
                     'Color': color if color else 'N/A',
                     'Extracted Qty': extracted_qty,
-                    'Current Qty': current_qty,  # This will now show extracted qty
-                    'Compare Price': st.session_state.variant_compare_prices.get(variant_key, default_compare_price),
+                    'Current Qty': current_qty,
+                    'Extracted Compare Price': extracted_compare_price,
+                    'Current Compare Price': current_compare_price,
                     'Key': variant_key
                 })
-            
+
             variant_df = pd.DataFrame(variant_data)
             
-            # Use data editor for super fast editing
             edited_variants = st.data_editor(
-                variant_df[['Product', 'Size', 'Color', 'Extracted Qty', 'Current Qty', 'Compare Price']], 
+                variant_df[['Product', 'Size', 'Color', 'Extracted Qty', 'Current Qty', 'Extracted Compare Price', 'Current Compare Price']], 
                 hide_index=True,
                 use_container_width=True,
                 key="variant_editor",
                 column_config={
                     'Extracted Qty': st.column_config.NumberColumn('Extracted Qty', disabled=True, help="Quantity extracted from size data"),
                     'Current Qty': st.column_config.NumberColumn('Current Qty', min_value=0, step=1),
-                    'Compare Price': st.column_config.NumberColumn('Compare Price ($)', min_value=0.0, step=0.01, format="%.2f")
+                    'Extracted Compare Price': st.column_config.NumberColumn('Extracted Compare Price ($)', disabled=True, format="%.2f", help="Compare price from uploaded data"),
+                    'Current Compare Price': st.column_config.NumberColumn('Current Compare Price ($)', min_value=0.0, step=0.01, format="%.2f")
                 }
             )
             
             if st.button("💾 Apply All Spreadsheet Changes", key="apply_table", type="primary"):
                 for i, variant_key in enumerate(variant_df['Key']):
                     st.session_state.variant_quantities[variant_key] = int(edited_variants.iloc[i]['Current Qty'])
-                    st.session_state.variant_compare_prices[variant_key] = float(edited_variants.iloc[i]['Compare Price'])
+                    st.session_state.variant_compare_prices[variant_key] = float(edited_variants.iloc[i]['Current Compare Price'])
                 st.success("✅ Applied all spreadsheet changes!")
                 st.rerun()
 
@@ -732,26 +790,19 @@ if process_button or 'processed_data' in st.session_state:
     variant_compare_price_map = st.session_state.variant_compare_prices
     
     # Create variant key for mapping
-    df["_variant_key"] = (df["sizes_list"].astype(str).fillna("").str.strip() + "|" + 
-                          df["colours_list"].astype(str).fillna("").str.strip() + "|" + 
-                          df["title"].astype(str).fillna("").str.strip())
+    df["_variant_key"] = (df["sizes_list"].astype(str).fillna("").str.strip() + "|" + df["colours_list"].astype(str).fillna("").str.strip() + "|" + df["title"].astype(str).fillna("").str.strip())
     
-    # CRITICAL FIX: Apply quantities and compare prices from session state
     def get_quantity(variant_key):
         return variant_qty_map.get(variant_key, default_qty)
     
     def get_compare_price(variant_key):
         return variant_compare_price_map.get(variant_key, default_compare_price)
     
-    # Apply the mappings
     df["Variant Inventory Qty"] = df["_variant_key"].apply(get_quantity)
     df["Variant Compare At Price"] = df["_variant_key"].apply(get_compare_price)
-    
-    # Ensure data types are correct
     df["Variant Inventory Qty"] = pd.to_numeric(df["Variant Inventory Qty"], errors='coerce').fillna(0).astype(int)
-    df["Variant Compare At Price"] = pd.to_numeric(df["Variant Compare At Price"], errors='coerce').fillna(0.0).astype(float)
+    df["Variant Compare At Price"] = pd.to_numeric(df["Variant Compare At Price"], errors='coerce').fillna(default_compare_price).astype(float)
 
-    # ── Enhanced Final Dataset Generation with Proper Sorting and Inventory ──
     grouped_data = []
 
     for handle, group in df.groupby("Handle"):
@@ -842,11 +893,10 @@ if process_button or 'processed_data' in st.session_state:
         
         grouped_data.append(first_variant)
         
-        # Create subsequent rows for remaining variants (if any)
-        for _, row in group_list[1:]:  # Skip first row, process rest
+        for _, row in group_list[1:]:
             variant_row = {
                 "Handle": clean_value(handle),
-                "Title": "",  # Empty for additional variants
+                "Title": "", 
                 "Body (HTML)": "",
                 "Vendor": "",
                 "Product Category": "",
@@ -1030,14 +1080,4 @@ if process_button or 'processed_data' in st.session_state:
         - Double-check pricing and inventory levels
         - Test with a small batch first if you have many products
         - Sizes are automatically sorted: XS, S, M, L, XL, XXL, XXXL, then custom sizes
-        
-        ### 🔧 Enhanced Features:
-        - **Smart Size Parsing**: Extracts quantities from 'S-4' format → Size: S, Qty: 4
-        - **No NaN Values**: All empty fields are properly handled as blank entries
-        - **Sorted Sizes**: Sizes appear in logical order (S, M, L, XL, etc.)
-        - **Individual Compare Prices**: Set compare-at prices for each variant individually
-        - **Extraction Summary**: Shows what quantities were automatically detected
-        - **Spreadsheet Editing**: Power users can edit in table format for bulk changes
-        - **NEW: Components & Fabric**: Includes number of components and fabric type information
-        - **Product Details Tab**: View fabric types and component distribution
         """)
