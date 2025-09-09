@@ -291,6 +291,34 @@ with st.sidebar:
     
     st.markdown("---")
     
+    st.markdown("### ➕ Size Surcharge Settings")
+    enable_surcharge = st.checkbox("Enable Size Surcharge")
+
+    surcharge_rules = {}
+
+    if enable_surcharge:
+        st.caption("Add sizes (greater than XL) with surcharge %")
+        
+        # number of surcharge rules to add
+        num_rules = st.number_input(
+            "How many size surcharges?",
+            min_value=1, value=1, step=1, key="num_surcharge_rules"
+        )
+        
+        for i in range(num_rules):
+            cols = st.columns([2, 1])
+            with cols[0]:
+                size = st.text_input(f"Size {i+1}", key=f"surcharge_size_{i}").upper().strip()
+            with cols[1]:
+                percent = st.number_input(
+                    f"%", min_value=0.0, value=0.0, step=0.5, key=f"surcharge_percent_{i}"
+                )
+            
+            if size and percent > 0:
+                surcharge_rules[size] = percent / 100.0
+                
+    st.markdown("---")
+    
     # Brand customization
     st.markdown("### 🏢 Brand Settings")
     vendor_name = st.text_input("Vendor Name", value="YourBrandName", help="This will appear as the vendor in Shopify")
@@ -795,11 +823,19 @@ if process_button or 'processed_data' in st.session_state:
     def get_quantity(variant_key):
         return variant_qty_map.get(variant_key, default_qty)
     
-    def get_compare_price(variant_key):
-        return variant_compare_price_map.get(variant_key, default_compare_price)
-    
+    def get_final_compare_price(row):
+        base_price = clean_value(row.get("Variant Price", 0), is_numeric=True, default_numeric=0)
+        size = str(row["sizes_list"]).upper().strip()
+
+        # If surcharge enabled and size matches → apply on Variant Price
+        if enable_surcharge and size in surcharge_rules:
+            return round(base_price * (1 + surcharge_rules[size]), 2)
+
+        # Otherwise → fall back to the base Compare At Price (from sheet/default)
+        return row["Variant Compare At Price"]
+
     df["Variant Inventory Qty"] = df["_variant_key"].apply(get_quantity)
-    df["Variant Compare At Price"] = df["_variant_key"].apply(get_compare_price)
+    df["Variant Compare At Price"] = df.apply(get_final_compare_price, axis=1)
     df["Variant Inventory Qty"] = pd.to_numeric(df["Variant Inventory Qty"], errors='coerce').fillna(0).astype(int)
     df["Variant Compare At Price"] = pd.to_numeric(df["Variant Compare At Price"], errors='coerce').fillna(default_compare_price).astype(float)
 
