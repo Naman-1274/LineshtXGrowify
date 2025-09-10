@@ -85,10 +85,10 @@ def sort_sizes_with_quantities(sizes_list):
         if not matched:
             # Check if it's a pure numeric size
             import re
-            if re.match(r'^\d+$', size):
+            if re.match(r'^\d+₹', size):
                 # Pure numeric size like "5", "10", "12"
                 numeric_sizes.append((int(size), size))
-            elif re.match(r'^X\d+$', size.upper()):
+            elif re.match(r'^X\d+₹', size.upper()):
                 # Sizes like "X10", "X20"
                 numbers = re.findall(r'\d+', size)
                 if numbers:
@@ -169,8 +169,6 @@ def process_variants_with_inventory(df_raw):
 
 
 def generate_structured_body_html(row):
-    
-    # Extract and clean values
     description = clean_value(row.get('custom_description', ''))
     fabric = clean_value(row.get('fabric', ''))
     celebs_name = clean_value(row.get('celebs_name', ''))
@@ -179,27 +177,36 @@ def generate_structured_body_html(row):
     fit = clean_value(row.get('fit', ''))
     sizes_info = clean_value(row.get('sizes_info', ''))
     colors = clean_value(row.get('colour', ''))
-    
+    delivery_time = clean_value(row.get('Delivery Time', ''))
+    wash_care = clean_value(row.get('Wash Care', ''))
+    technique_used = clean_value(row.get('Technique Used', ''))
+    embroidery_details = clean_value(row.get('Embroidery Details', ''))
+
     html_parts = []
-    
+
+    # Description as paragraph
     if description:
         html_parts.append(f"<p>{description}</p>")
-    if fabric:
-        html_parts.append(f"<p><strong>Fabric</strong>:- {fabric}</p>")
-    if celebs_name:
-        html_parts.append(f"<p><strong>Celebs Name</strong>:- {celebs_name}</p>")
-    if no_of_components:
-        html_parts.append(f"<p><strong>No of components (set)</strong>:- {no_of_components}</p>")
-    if colors:
-        html_parts.append(f"<p><strong>Color</strong>:- {colors}</p>")
-    if product_code:
-        html_parts.append(f"<p><strong>SKU</strong>:- {product_code}</p>")
-    if fit:
-        html_parts.append(f"<p><strong>Fit</strong>:- {fit}</p>")
-    if sizes_info:
-        html_parts.append(f"<p><strong>Sizes (surcharges if any)</strong>:- {sizes_info}</p>")
-    
+
+    # Other specs as bullet points
+    specs = []
+    if fabric: specs.append(f"<li><strong>Fabric</strong>: {fabric}</li>")
+    if celebs_name: specs.append(f"<li><strong>Celebs Name</strong>: {celebs_name}</li>")
+    if no_of_components: specs.append(f"<li><strong>No of components (set)</strong>: {no_of_components}</li>")
+    if colors: specs.append(f"<li><strong>Color</strong>: {colors}</li>")
+    if product_code: specs.append(f"<li><strong>SKU</strong>: {product_code}</li>")
+    if fit: specs.append(f"<li><strong>Fit</strong>: {fit}</li>")
+    if sizes_info: specs.append(f"<li><strong>Sizes (surcharges if any)</strong>: {sizes_info}</li>")
+    if delivery_time: specs.append(f"<li><strong>Delivery Time</strong>: {delivery_time}</li>")
+    if wash_care: specs.append(f"<li><strong>Wash Care</strong>: {wash_care}</li>")
+    if technique_used: specs.append(f"<li><strong>Technique Used</strong>: {technique_used}</li>")
+    if embroidery_details: specs.append(f"<li><strong>Embroidery Details</strong>: {embroidery_details}</li>")
+
+    if specs:
+        html_parts.append("<ul>" + "".join(specs) + "</ul>")
+
     return "".join(html_parts) if html_parts else ""
+
 
 # ── 2) Enhanced UI Setup ────────────────────────────────────────────────────
 st.set_page_config(
@@ -661,7 +668,25 @@ if process_button or 'processed_data' in st.session_state:
             extracted_compare_price = extracted_compare_prices.get((size, color, title), default_compare_price)
             st.session_state.variant_compare_prices[variant_key] = extracted_compare_price
 
-            
+    if enable_surcharge:
+        for size, color, title in unique_variants:
+            variant_key = f"{size}|{color}|{title}"
+            try:
+                base_price = float(
+                    df.loc[
+                        (df["sizes_list"] == size) &
+                        (df["colours_list"] == color) &
+                        (df["title"] == title),
+                        "Variant Price"
+                    ].iloc[0]
+                )
+            except Exception:
+                base_price = 0.0
+
+            if size.upper().strip() in surcharge_rules:
+                new_compare = round(base_price * (1 + surcharge_rules[size.upper().strip()]), 2)
+                st.session_state.variant_compare_prices[variant_key] = new_compare
+                    
     for size, color, title in unique_variants:
         variant_key = f"{size}|{color}|{title}"
         extracted_qty = extracted_quantities.get((size, color, title), 0)
@@ -686,7 +711,7 @@ if process_button or 'processed_data' in st.session_state:
             st.session_state.variant_quantities[variant_key] = bulk_qty
 
     if bulk_compare_price_mode:
-        st.info(f"💰 Bulk compare price mode enabled: Setting ${bulk_compare_price:.2f} for all variants")
+        st.info(f"💰 Bulk compare price mode enabled: Setting ₹{bulk_compare_price:.2f} for all variants")
         for size, color, title in unique_variants:
             variant_key = f"{size}|{color}|{title}"
             st.session_state.variant_compare_prices[variant_key] = bulk_compare_price
@@ -733,7 +758,7 @@ if process_button or 'processed_data' in st.session_state:
                             if extracted_qty > 0:
                                 st.caption(f"↗️ Extracted Qty: {extracted_qty}")
                             if extracted_compare_price > 0 and extracted_compare_price != default_compare_price:
-                                st.caption(f"💰 Extracted Compare: ${extracted_compare_price:.2f}")
+                                st.caption(f"💰 Extracted Compare: ₹{extracted_compare_price:.2f}")
 
                         with col2:
                             current_qty = st.session_state.variant_quantities.get(variant_key, default_qty)
@@ -749,13 +774,13 @@ if process_button or 'processed_data' in st.session_state:
                         with col3:
                             current_compare_price = st.session_state.variant_compare_prices.get(variant_key, default_compare_price)
                             compare_price = st.number_input(
-                                f"Compare Price ($)",
+                                f"Compare Price (₹)",
                                 min_value=0.0,
                                 value=float(current_compare_price),
-                                step=0.01,
+                                step=1.0,
                                 format="%.2f",
                                 key=f"form_price_{variant_key}_{hash(variant_key) % 10000}",
-                                help=f"Extracted from uploaded data: ${extracted_compare_price:.2f}" if extracted_compare_price != default_compare_price else "Manual compare price"
+                                help=f"Extracted from uploaded data: ₹{extracted_compare_price:.2f}" if extracted_compare_price != default_compare_price else "Manual compare price"
                             )
 
                         variant_inputs[variant_key] = (qty, compare_price)
@@ -801,8 +826,8 @@ if process_button or 'processed_data' in st.session_state:
                 column_config={
                     'Extracted Qty': st.column_config.NumberColumn('Extracted Qty', disabled=True, help="Quantity extracted from size data"),
                     'Current Qty': st.column_config.NumberColumn('Current Qty', min_value=0, step=1),
-                    'Extracted Compare Price': st.column_config.NumberColumn('Extracted Compare Price ($)', disabled=True, format="%.2f", help="Compare price from uploaded data"),
-                    'Current Compare Price': st.column_config.NumberColumn('Current Compare Price ($)', min_value=0.0, step=0.01, format="%.2f")
+                    'Extracted Compare Price': st.column_config.NumberColumn('Extracted Compare Price (₹)', disabled=True, format="%.2f", help="Compare price from uploaded data"),
+                    'Current Compare Price': st.column_config.NumberColumn('Current Compare Price (₹)', min_value=0.0, step=0.01, format="%.2f")
                 }
             )
             
@@ -833,6 +858,13 @@ if process_button or 'processed_data' in st.session_state:
 
         # Otherwise → fall back to the base Compare At Price (from sheet/default)
         return row["Variant Compare At Price"]
+    
+    if "variant_compare_prices" not in st.session_state:
+        st.session_state.variant_compare_prices = {}
+
+    for _, row in df.iterrows():
+        variant_key = row["_variant_key"]
+        st.session_state.variant_compare_prices[variant_key] = float(row["Variant Compare At Price"])
 
     df["Variant Inventory Qty"] = df["_variant_key"].apply(get_quantity)
     df["Variant Compare At Price"] = df.apply(get_final_compare_price, axis=1)
@@ -1009,7 +1041,7 @@ if process_button or 'processed_data' in st.session_state:
         st.markdown('<div class="stats-box"><h3>{}</h3><p>Unique Products</p></div>'.format(unique_products), unsafe_allow_html=True)
     with col4:
         avg_price = out["Variant Price"].replace(0, pd.NA).mean()
-        st.markdown('<div class="stats-box"><h3>{}</h3><p>Avg Price</p></div>'.format(f"${avg_price:.0f}" if pd.notna(avg_price) else "N/A"), unsafe_allow_html=True)
+        st.markdown('<div class="stats-box"><h3>{}</h3><p>Avg Price</p></div>'.format(f"₹{avg_price:.0f}" if pd.notna(avg_price) else "N/A"), unsafe_allow_html=True)
 
     # Tabbed results view - Updated with new columns
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 Final Preview", "📈 Inventory Summary", "🏷️ AI Tags Overview", "💰 Price Summary", "🧵 Product Details"])
