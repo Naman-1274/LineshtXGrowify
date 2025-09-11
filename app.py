@@ -11,8 +11,54 @@ load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY")
 
 # ── Helper Functions ────────────────────────────────────────────────────────
+def normalize_column_names(df):
+    """Normalize column names to handle case sensitivity and common variations"""
+    column_mapping = {}
+    
+    # Define common column name variations (all lowercase for matching)
+    column_variants = {
+        'title': ['title', 'product_title', 'product title', 'name', 'product_name', 'product name'],
+        'description': ['description', 'product_description', 'product description', 'desc'],
+        'colour': ['colour', 'color', 'colors', 'colours'],
+        'product code': ['product code', 'product_code', 'sku', 'product_sku', 'item_code', 'item code'],
+        'product category': ['product category', 'product_category', 'category', 'product_type'],
+        'type': ['type', 'product_type', 'product type'],
+        'published': ['published', 'status', 'active', 'publish_status', 'publish status'],
+        'size': ['size', 'sizes', 'variant_size', 'variant size'],
+        'no of components': ['no of components', 'no_of_components', 'components', 'number_of_components', 'component_count'],
+        'fabric': ['fabric', 'material', 'fabric_type', 'fabric type'],
+        'variant price': ['variant price', 'variant_price', 'price', 'unit_price', 'unit price', 'cost'],
+        'variant compare at price': ['variant compare at price', 'variant_compare_at_price', 'compare_price', 'compare price', 'compare at price', 'compare_at_price', 'original_price', 'original price'],
+        'celebs name': ['celebs name', 'celebs_name', 'celebrity_name', 'celebrity name', 'celeb_name', 'celeb name'],
+        'fit': ['fit', 'fitting', 'size_fit', 'size fit'],
+        'sizes info': ['sizes info', 'sizes_info', 'size_info', 'size info'],
+        'delivery time': ['delivery time', 'delivery_time', 'shipping_time', 'shipping time'],
+        'wash care': ['wash care', 'wash_care', 'care_instructions', 'care instructions'],
+        'technique used': ['technique used', 'technique_used', 'manufacturing_technique', 'manufacturing technique'],
+        'embroidery details': ['embroidery details', 'embroidery_details', 'embroidery', 'embroidery_info']
+    }
+    
+    # Create lowercase version of actual column names for matching
+    actual_columns_lower = {col.lower().strip(): col for col in df.columns}
+    
+    # Map standardized names to actual column names
+    for standard_name, variants in column_variants.items():
+        for variant in variants:
+            if variant.lower() in actual_columns_lower:
+                column_mapping[standard_name] = actual_columns_lower[variant.lower()]
+                break
+    
+    return column_mapping
+
+def get_column_value(row, column_mapping, standard_name, default=""):
+    """Get value from row using standardized column names"""
+    actual_column = column_mapping.get(standard_name)
+    if actual_column and actual_column in row.index:
+        return row[actual_column]
+    return default
+
 def clean_value(value, is_numeric=False, default_numeric=0):
-    """Clean values to avoid NaN in output"""
+    """Clean values to avoid NaN in output - case insensitive"""
     if pd.isna(value) or value == 'nan' or value == 'NaN' or str(value).strip() == '':
         return default_numeric if is_numeric else ""
     
@@ -25,9 +71,9 @@ def clean_value(value, is_numeric=False, default_numeric=0):
     return str(value).strip()
 
 def parse_size_and_quantity(size_string):
-    size_string = size_string.strip()
+    size_string = str(size_string).strip()
     
-    # Handle special cases
+    # Handle special cases (case insensitive)
     if size_string.lower() == 'custom':
         return 'Custom', 0
     
@@ -43,7 +89,6 @@ def parse_size_and_quantity(size_string):
     else:
         # No dash or multiple dashes, treat as size only
         return size_string, 0
-
 
 def sort_sizes_with_quantities(sizes_list):
     standard_order = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', 'XXXL', '2XL', '3XL', '4XL', '5XL']
@@ -85,10 +130,10 @@ def sort_sizes_with_quantities(sizes_list):
         if not matched:
             # Check if it's a pure numeric size
             import re
-            if re.match(r'^\d+₹', size):
+            if re.match(r'^\d+$', size):
                 # Pure numeric size like "5", "10", "12"
                 numeric_sizes.append((int(size), size))
-            elif re.match(r'^X\d+₹', size.upper()):
+            elif re.match(r'^X\d+$', size.upper()):
                 # Sizes like "X10", "X20"
                 numbers = re.findall(r'\d+', size)
                 if numbers:
@@ -111,7 +156,6 @@ def sort_sizes_with_quantities(sizes_list):
     
     return sorted_sizes, size_quantity_map
 
-
 def sort_sizes(sizes_list):
     """Legacy function - now just returns the sorted sizes without quantities"""
     sorted_sizes, _ = sort_sizes_with_quantities(sizes_list)
@@ -121,32 +165,29 @@ def process_variants_with_inventory(df_raw):
     """Process variants and extract both inventory quantities and compare prices from uploaded data"""
     df_exploded_list = []
     
+    # Get column mapping for case-insensitive access
+    column_mapping = normalize_column_names(df_raw)
+    
     for _, row in df_raw.iterrows():
-        # Parse sizes and extract quantities
-        sorted_sizes, size_quantity_map = sort_sizes_with_quantities(clean_value(row.get("size", "")))
-        colors = [c.strip() for c in str(clean_value(row.get("colour", ""))).split(",") if c.strip()]
+        # Parse sizes and extract quantities using normalized column access
+        sizes_value = get_column_value(row, column_mapping, 'size', "")
+        colours_value = get_column_value(row, column_mapping, 'colour', "")
         
-        # Extract compare price from uploaded data (similar to how we extract quantities)
+        sorted_sizes, size_quantity_map = sort_sizes_with_quantities(clean_value(sizes_value))
+        colors = [c.strip() for c in str(clean_value(colours_value)).split(",") if c.strip()]
+        
+        # Extract compare price from uploaded data (case insensitive)
         uploaded_compare_price = default_compare_price
         
-        # Try different possible column names for compare price in uploaded data
-        compare_price_columns = [
-            'Variant Compare At Price', 'variant compare at price', 
-            'compare_price', 'Compare Price', 'compare price',
-            'Compare At Price', 'compare at price'
-        ]
-        
-        for col_name in compare_price_columns:
-            if col_name in row.index:  # Check if column exists in the row
-                raw_value = row.get(col_name)
-                if pd.notna(raw_value) and str(raw_value).strip() != '':
-                    try:
-                        numeric_value = float(str(raw_value).strip())
-                        if numeric_value >= 0:
-                            uploaded_compare_price = numeric_value
-                            break
-                    except (ValueError, TypeError):
-                        continue
+        # Try to get compare price using normalized column mapping
+        compare_price_value = get_column_value(row, column_mapping, 'variant compare at price')
+        if compare_price_value and pd.notna(compare_price_value) and str(compare_price_value).strip() != '':
+            try:
+                numeric_value = float(str(compare_price_value).strip())
+                if numeric_value >= 0:
+                    uploaded_compare_price = numeric_value
+            except (ValueError, TypeError):
+                pass
         
         # If no sizes or colors, create default entries
         if not sorted_sizes:
@@ -167,20 +208,20 @@ def process_variants_with_inventory(df_raw):
     
     return pd.DataFrame(df_exploded_list)
 
-
-def generate_structured_body_html(row):
-    description = clean_value(row.get('custom_description', ''))
-    fabric = clean_value(row.get('fabric', ''))
-    celebs_name = clean_value(row.get('celebs_name', ''))
-    no_of_components = clean_value(row.get('no of components', ''))
-    product_code = clean_value(row.get('product code', ''))
-    fit = clean_value(row.get('fit', ''))
-    sizes_info = clean_value(row.get('sizes_info', ''))
-    colors = clean_value(row.get('colour', ''))
-    delivery_time = clean_value(row.get('Delivery Time', ''))
-    wash_care = clean_value(row.get('Wash Care', ''))
-    technique_used = clean_value(row.get('Technique Used', ''))
-    embroidery_details = clean_value(row.get('Embroidery Details', ''))
+def generate_structured_body_html(row, column_mapping):
+    """Generate HTML body using normalized column access"""
+    description = clean_value(get_column_value(row, column_mapping, 'description', ''))
+    fabric = clean_value(get_column_value(row, column_mapping, 'fabric', ''))
+    celebs_name = clean_value(get_column_value(row, column_mapping, 'celebs name', ''))
+    no_of_components = clean_value(get_column_value(row, column_mapping, 'no of components', ''))
+    product_code = clean_value(get_column_value(row, column_mapping, 'product code', ''))
+    fit = clean_value(get_column_value(row, column_mapping, 'fit', ''))
+    sizes_info = clean_value(get_column_value(row, column_mapping, 'sizes info', ''))
+    colors = clean_value(get_column_value(row, column_mapping, 'colour', ''))
+    delivery_time = clean_value(get_column_value(row, column_mapping, 'delivery time', ''))
+    wash_care = clean_value(get_column_value(row, column_mapping, 'wash care', ''))
+    technique_used = clean_value(get_column_value(row, column_mapping, 'technique used', ''))
+    embroidery_details = clean_value(get_column_value(row, column_mapping, 'embroidery details', ''))
 
     html_parts = []
 
@@ -207,6 +248,43 @@ def generate_structured_body_html(row):
 
     return "".join(html_parts) if html_parts else ""
 
+def safe_get_column_data(df, column_mapping, standard_name, default_value=""):
+    """Safely get column data with fallback to direct column access"""
+    # Try normalized column mapping first
+    actual_column = column_mapping.get(standard_name)
+    if actual_column and actual_column in df.columns:
+        return df[actual_column]
+    
+    # Fallback to direct access for backward compatibility
+    if standard_name in df.columns:
+        return df[standard_name]
+        
+    # Try case-insensitive search
+    for col in df.columns:
+        if col.lower().strip() == standard_name.lower().strip():
+            return df[col]
+    
+    # Return series of default values
+    return pd.Series([default_value] * len(df), index=df.index)
+
+def tags_only(text: str) -> str:
+    """Generate tags from text using AI (simple mode)"""
+    if not ai_enabled:
+        return ""
+    
+    prompt = (
+        "Extract exactly 5 relevant product tags from this text. "
+        "Return only the tags as a comma-separated list with no extra text.\n\n"
+        f"Text: {text}\n\n"
+        "Tags:"
+    )
+    
+    try:
+        response = model.generate_content(prompt)
+        return (response.text or "").strip()
+    except Exception as e:
+        st.warning(f"AI tag generation failed: {e}")
+        return ""
 
 # ── 2) Enhanced UI Setup ────────────────────────────────────────────────────
 st.set_page_config(
@@ -384,35 +462,39 @@ with st.sidebar:
     # Enhanced file format info
     with st.expander("📋 File Format Requirements", expanded=False):
         st.markdown("""
-        **Required Columns:**
-        - `title` - Product name
-        - `description` - Product description  
-        - `colour` - Colors (comma-separated)
-        - `product code` - SKU base
-        - `product category` - Category
-        - `type` - Product type
-        - `published` - Status (active/inactive)
-        - `size` - Size format: `S-4,M-8,L-12,XL-16`
-        - `no of components` - Number of components/pieces
-        - `fabric` - Fabric type/material
+        **Required Columns (case insensitive):**
+        - `title` / `Title` / `Product Title` - Product name
+        - `description` / `Description` - Product description  
+        - `colour` / `Color` / `Colors` - Colors (comma-separated)
+        - `product code` / `Product Code` / `SKU` - SKU base
+        - `product category` / `Category` - Category
+        - `type` / `Type` / `Product Type` - Product type
+        - `published` / `Status` - Status (active/inactive)
+        - `size` / `Size` / `Sizes` - Size format: `S-4,M-8,L-12,XL-16`
+        - `no of components` / `Components` - Number of components/pieces
+        - `fabric` / `Fabric` / `Material` - Fabric type/material
         
         **Size Format Examples:**
         - `S-4,M-8,L-12,XL-16` → Sizes: S,M,L,XL with Quantities: 4,8,12,16
         - `XS-0,S-5,M-10,L-15,XL-20` → Auto-extracts quantities
         - `Custom,Small,Medium,Large` → Uses fallback quantity
+        
+        **Note:** Column names are now case-insensitive and support common variations!
         """)
     
     # Processing tips
     with st.expander("💡 Processing Tips", expanded=False):
         st.markdown("""
         **How it works:**
-        1. **Size Parsing**: `S-4` becomes Size=`S`, Quantity=`4`
-        2. **Smart Sorting**: Sizes ordered as XS, S, M, L, XL, XXL, etc.
-        3. **Manual Override**: You can adjust any extracted quantities
-        4. **Bulk Options**: Override extracted quantities if needed
-        5. **Components & Fabric**: Added as custom properties for better product info
+        1. **Case Insensitive**: Handles `Title`, `TITLE`, `title` - all work!
+        2. **Size Parsing**: `S-4` becomes Size=`S`, Quantity=`4`
+        3. **Smart Sorting**: Sizes ordered as XS, S, M, L, XL, XXL, etc.
+        4. **Manual Override**: You can adjust any extracted quantities
+        5. **Bulk Options**: Override extracted quantities if needed
+        6. **Components & Fabric**: Added as custom properties for better product info
         
         **Best Practices:**
+        - Column names can be in any case (Title, TITLE, title all work)
         - Use consistent size format: `SIZE-QUANTITY`
         - Check extracted quantities before processing
         - Use bulk mode only when you want same qty for all
@@ -449,6 +531,9 @@ if not uploaded_file:
 try:
     df_raw = pd.read_excel(uploaded_file) if uploaded_file.name.lower().endswith(".xlsx") else pd.read_csv(uploaded_file)
     
+    # Get column mapping for case-insensitive processing
+    column_mapping = normalize_column_names(df_raw)
+    
     # Display success metrics
     col1, col2, col3, col4 = st.columns(4)
     with col1:
@@ -456,31 +541,51 @@ try:
     with col2:
         st.markdown('<div class="stats-box"><h3>{}</h3><p>Columns</p></div>'.format(len(df_raw.columns)), unsafe_allow_html=True)
     with col3:
-        total_variants = sum(len(str(row.get('size', '')).split(',')) * len(str(row.get('colour', '')).split(',')) for _, row in df_raw.iterrows())
+        # Calculate total variants using safe column access
+        total_variants = 0
+        for _, row in df_raw.iterrows():
+            sizes_value = get_column_value(row, column_mapping, 'size', "")
+            colours_value = get_column_value(row, column_mapping, 'colour', "")
+            size_count = len([s.strip() for s in str(sizes_value).split(',') if s.strip()]) if sizes_value else 1
+            color_count = len([c.strip() for c in str(colours_value).split(',') if c.strip()]) if colours_value else 1
+            total_variants += size_count * color_count
         st.markdown('<div class="stats-box"><h3>{}</h3><p>Est. Variants</p></div>'.format(total_variants), unsafe_allow_html=True)
     with col4:
-        active_products = sum(1 for _, row in df_raw.iterrows() if str(row.get('published', '')).lower() == 'active')
+        # Count active products using safe column access
+        active_products = 0
+        for _, row in df_raw.iterrows():
+            published_value = get_column_value(row, column_mapping, 'published', "")
+            if str(published_value).lower() == 'active':
+                active_products += 1
         st.markdown('<div class="stats-box"><h3>{}</h3><p>Active Products</p></div>'.format(active_products), unsafe_allow_html=True)
     
-    # Check for missing or zero variant prices in uploaded data
-    if 'Variant Price' in df_raw.columns:
-        price_column = 'Variant Price'
-    elif 'price' in df_raw.columns:
-        price_column = 'price'
-    else:
-        price_column = None
+    # Check for missing or zero variant prices in uploaded data (case insensitive)
+    price_column_actual = column_mapping.get('variant price')
+    if not price_column_actual:
+        # Fallback to direct search
+        for col in df_raw.columns:
+            if 'price' in col.lower():
+                price_column_actual = col
+                break
 
-    if price_column:
+    if price_column_actual and price_column_actual in df_raw.columns:
         zero_or_blank_prices = df_raw[
-            (df_raw[price_column] == 0) | 
-            (df_raw[price_column].isna()) | 
-            (df_raw[price_column] == "") |
-            (pd.to_numeric(df_raw[price_column], errors='coerce').fillna(0) == 0)
+            (df_raw[price_column_actual] == 0) | 
+            (df_raw[price_column_actual].isna()) | 
+            (df_raw[price_column_actual] == "") |
+            (pd.to_numeric(df_raw[price_column_actual], errors='coerce').fillna(0) == 0)
         ]
         
         if len(zero_or_blank_prices) > 0:
             total_products_with_zero_prices = len(zero_or_blank_prices)
-            st.warning(f"⚠️ **PRICE ALERT**: {total_products_with_zero_prices} out of {len(df_raw)} products have missing or zero prices in the '{price_column}' column. Please update your source data with proper pricing before processing to avoid Shopify import issues.")
+            st.warning(f"⚠️ **PRICE ALERT**: {total_products_with_zero_prices} out of {len(df_raw)} products have missing or zero prices in the '{price_column_actual}' column. Please update your source data with proper pricing before processing to avoid Shopify import issues.")
+    
+    # Show column mapping information
+    if column_mapping:
+        with st.expander("🔍 Detected Column Mappings", expanded=False):
+            st.write("The following columns were automatically detected (case-insensitive):")
+            for standard_name, actual_column in column_mapping.items():
+                st.write(f"**{standard_name}** → `{actual_column}`")
     
     # Data preview with tabs
     tab1, tab2 = st.tabs(["📊 Data Preview", "🔍 Column Analysis"])
@@ -520,26 +625,6 @@ def refine_and_tag(text: str) -> tuple[str, str]:
 
     try:
         response = model.generate_content(prompt)
-        parts = (response.text or "").strip().split("\n", 1)
-        return parts[0].strip(), (parts[1].strip() if len(parts) > 1 else "")
-    except Exception as e:
-        st.warning(f"⚠️ AI processing failed: {e}")
-        return text, ""
-
-def tags_only(text: str) -> str:
-    if not ai_enabled:
-        return ""
-
-    prompt = (
-        "You are an expert Shopify copywriter.\n"
-        "Suggest exactly five comma-separated Shopify tags for this product description:\n\n"
-        f"\"\"\"\n{text}\n\"\"\"\n\n"
-        "Respond with a single line:\n"
-        "tag1,tag2,tag3,tag4,tag5"
-    )
-
-    try:
-        response = model.generate_content(prompt)
         return (response.text or "").strip()
     except Exception as e:
         st.warning(f"⚠️ AI tag generation failed: {e}")
@@ -565,14 +650,15 @@ if process_button or 'processed_data' in st.session_state:
 
             with st.spinner("🔮 AI is working its magic..."):
                 for i, (_, row) in enumerate(df.iterrows()):
-                    title = row.get('title', 'Unknown')
+                    # Use normalized column access for title and description
+                    title = get_column_value(row, column_mapping, 'title', 'Unknown')
                     if pd.isna(title) or title is None:
                         title = 'Unknown'
                     status_text.text(f"Processing product {i+1}/{n}: {str(title)[:30]}...")
                     
-                    original = clean_value(row.get("description", ""))
+                    original = clean_value(get_column_value(row, column_mapping, 'description', ""))
                     if mode == "Default template (no AI)":
-                        desc = f"{clean_value(row.get('description', ''))}"
+                        desc = original
                         tags = ""
                     elif mode == "Simple mode (first sentence + tags)":
                         first_sent = original.split(".", 1)[0].strip()
@@ -594,10 +680,13 @@ if process_button or 'processed_data' in st.session_state:
         # Process variants with extracted inventory quantities
         df = process_variants_with_inventory(df)
         
-        # ── Corrected Handle Generation ──
+        # ── Corrected Handle Generation using normalized column access ──
+        title_series = safe_get_column_data(df, column_mapping, 'title', 'Unknown')
+        product_code_series = safe_get_column_data(df, column_mapping, 'product code', '')
+        
         # Generate handles based on title + sku combination
-        df["Handle"] = (df["title"].astype(str).fillna("").str.strip() + "-" + 
-                        df.get("product code", pd.Series(dtype=str)).fillna("").astype(str).str.strip())
+        df["Handle"] = (title_series.astype(str).fillna("").str.strip() + "-" + 
+                        product_code_series.fillna("").astype(str).str.strip())
 
         # Clean handles for Shopify format
         df["Handle"] = (df["Handle"]
@@ -609,11 +698,13 @@ if process_button or 'processed_data' in st.session_state:
         
         # Store processed data in session state
         st.session_state.processed_data = df
+        st.session_state.column_mapping = column_mapping  # Store column mapping
         st.session_state.variant_quantities = {}
         st.session_state.variant_compare_prices = {}
     else:
         # Use existing processed data
         df = st.session_state.processed_data
+        column_mapping = st.session_state.column_mapping
 
     # ── 8) Enhanced Inventory and Compare Price Management ──────────────────────
     st.markdown('<div class="step-header"><h2>🧮 Step 3: Manage Inventory & Pricing</h2></div>', unsafe_allow_html=True)
@@ -626,7 +717,9 @@ if process_button or 'processed_data' in st.session_state:
         
         # Group by handle first, then get variants
         for handle, group in df.groupby("Handle"):
-            title = clean_value(group.iloc[0]["title"])  # Get product title from first row
+            # Get product title using normalized column access from first row
+            first_row = group.iloc[0]
+            title = clean_value(get_column_value(first_row, column_mapping, 'title', 'Unknown'))
             
             for _, row in group.iterrows():
                 size = clean_value(row['sizes_list'])
@@ -672,14 +765,16 @@ if process_button or 'processed_data' in st.session_state:
         for size, color, title in unique_variants:
             variant_key = f"{size}|{color}|{title}"
             try:
-                base_price = float(
-                    df.loc[
-                        (df["sizes_list"] == size) &
-                        (df["colours_list"] == color) &
-                        (df["title"] == title),
-                        "Variant Price"
-                    ].iloc[0]
-                )
+                # Use safe column access for variant price
+                matching_rows = df[
+                    (df["sizes_list"] == size) &
+                    (df["colours_list"] == color) &
+                    (safe_get_column_data(df, column_mapping, 'title', 'Unknown') == title)
+                ]
+                if not matching_rows.empty:
+                    base_price = float(safe_get_column_data(matching_rows, column_mapping, 'variant price', 0).iloc[0])
+                else:
+                    base_price = 0.0
             except Exception:
                 base_price = 0.0
 
@@ -838,18 +933,28 @@ if process_button or 'processed_data' in st.session_state:
                 st.success("✅ Applied all spreadsheet changes!")
                 st.rerun()
 
-    # Apply quantities and compare prices to dataframe - FIXED VERSION
+    # Apply quantities and compare prices to dataframe - FIXED VERSION with case-insensitive access
     variant_qty_map = st.session_state.variant_quantities
     variant_compare_price_map = st.session_state.variant_compare_prices
     
-    # Create variant key for mapping
-    df["_variant_key"] = (df["sizes_list"].astype(str).fillna("").str.strip() + "|" + df["colours_list"].astype(str).fillna("").str.strip() + "|" + df["title"].astype(str).fillna("").str.strip())
+    # Create variant key for mapping using normalized column access
+    title_series = safe_get_column_data(df, column_mapping, 'title', 'Unknown')
+    df["_variant_key"] = (df["sizes_list"].astype(str).fillna("").str.strip() + "|" + 
+                         df["colours_list"].astype(str).fillna("").str.strip() + "|" + 
+                         title_series.astype(str).fillna("").str.strip())
     
     def get_quantity(variant_key):
         return variant_qty_map.get(variant_key, default_qty)
     
     def get_final_compare_price(row):
-        base_price = clean_value(row.get("Variant Price", 0), is_numeric=True, default_numeric=0)
+        # Use safe column access for variant price
+        base_price = 0
+        try:
+            variant_price_value = get_column_value(row, column_mapping, 'variant price', 0)
+            base_price = clean_value(variant_price_value, is_numeric=True, default_numeric=0)
+        except:
+            base_price = 0
+            
         size = str(row["sizes_list"]).upper().strip()
 
         # If surcharge enabled and size matches → apply on Variant Price
@@ -894,7 +999,7 @@ if process_button or 'processed_data' in st.session_state:
 
         processed_rows = []
         for orig_idx, row in group_list:
-            variant_key = f"{row['sizes_list']}|{row['colours_list']}|{row['title']}"
+            variant_key = f"{row['sizes_list']}|{row['colours_list']}|{get_column_value(row, column_mapping, 'title', 'Unknown')}"
             updated_row = row.copy()
             
             if variant_key in st.session_state.variant_quantities:
@@ -904,58 +1009,58 @@ if process_button or 'processed_data' in st.session_state:
             
             processed_rows.append(updated_row)
         
-        # Get product-level information from first row
+        # Get product-level information from first row using normalized column access
         first_row = processed_rows[0]
         has_colors = any(clean_value(row["colours_list"]) for row in processed_rows)
         first_variant = {
             "Handle": clean_value(handle),
-            "Title": clean_value(first_row["title"]),
-            "Body (HTML)": generate_structured_body_html(first_row),
+            "Title": clean_value(get_column_value(first_row, column_mapping, 'title', 'Unknown')),
+            "Body (HTML)": generate_structured_body_html(first_row, column_mapping),
             "Vendor": vendor_name,
-            "Product Category": clean_value(first_row.get("product category", "")),
-            "Type": clean_value(first_row.get("type", "")),
-            "Fabric": clean_value(first_row.get("fabric", "")),
+            "Product Category": clean_value(get_column_value(first_row, column_mapping, 'product category', '')),
+            "Type": clean_value(get_column_value(first_row, column_mapping, 'type', '')),
+            "Fabric": clean_value(get_column_value(first_row, column_mapping, 'fabric', '')),
             "Tags": clean_value(first_row["ai_tags"]),
-            "Published": "TRUE" if str(clean_value(first_row.get("published", ""))).lower() == "active" else "FALSE",
+            "Published": "TRUE" if str(clean_value(get_column_value(first_row, column_mapping, 'published', ''))).lower() == "active" else "FALSE",
             "Option1 Name": "Size",
             "Option1 Value": clean_value(first_row["sizes_list"]),
             "Option2 Name": "Color" if has_colors else "",
             "Option2 Value": clean_value(first_row["colours_list"]),
             "Option3 Name": "",
             "Option3 Value": "",
-            "Variant SKU": f"{clean_value(first_row.get('product code', ''))}",
+            "Variant SKU": f"{clean_value(get_column_value(first_row, column_mapping, 'product code', ''))}",
             "Variant Grams": clean_value(0, is_numeric=True),
-            "Variant Inventory Tracker": clean_value(first_row.get("Variant Inventory Tracker", "")),
+            "Variant Inventory Tracker": "",
             "Variant Inventory Qty": clean_value(first_row["Variant Inventory Qty"], is_numeric=True),
             "Variant Inventory Policy": inventory_policy,
             "Variant Fulfillment Service": "manual",
             "Variant Compare At Price": clean_value(first_row["Variant Compare At Price"], is_numeric=True),
-            "Variant Price": clean_value(first_row.get("Variant Price", 0), is_numeric=True),
+            "Variant Price": clean_value(get_column_value(first_row, column_mapping, 'variant price', 0), is_numeric=True),
             "Variant Requires Shipping": "TRUE",
             "Variant Taxable": "TRUE",
-            "Image Src": clean_value(first_row.get("Image Src", "")),
-            "Image Position": clean_value(first_row.get("Image Position", "")),
-            "Image Alt Text": clean_value(first_row.get("Image Alt Text", "")),
+            "Image Src": "",
+            "Image Position": "",
+            "Image Alt Text": "",
             "Gift Card": "FALSE",
-            "SEO Title": clean_value(first_row.get("SEO Title", "")),
-            "SEO Description": clean_value(first_row.get("SEO Description", "")),
-            "Google Shopping / Google Product Category": clean_value(first_row.get("Google Shopping / Google Product Category", "")),
-            "Google Shopping / Gender": clean_value(first_row.get("Google Shopping / Gender", "")),
-            "Google Shopping / Age Group": clean_value(first_row.get("Google Shopping / Age Group", "")),
-            "Google Shopping / MPN": clean_value(first_row.get("Google Shopping / MPN", "")),
-            "Google Shopping / AdWords Grouping": clean_value(first_row.get("Google Shopping / AdWords Grouping", "")),
-            "Google Shopping / AdWords Labels": clean_value(first_row.get("Google Shopping / AdWords Labels", "")),
-            "Google Shopping / Condition": clean_value(first_row.get("Google Shopping / Condition", "")),
-            "Google Shopping / Custom Product": clean_value(first_row.get("Google Shopping / Custom Product", "")),
-            "Google Shopping / Custom Label 0": clean_value(first_row.get("Google Shopping / Custom Label 0", "")),
-            "Google Shopping / Custom Label 1": clean_value(first_row.get("Google Shopping / Custom Label 1", "")),
-            "Google Shopping / Custom Label 2": clean_value(first_row.get("Google Shopping / Custom Label 2", "")),
-            "Google Shopping / Custom Label 3": clean_value(first_row.get("Google Shopping / Custom Label 3", "")),
-            "Google Shopping / Custom Label 4": clean_value(first_row.get("Google Shopping / Custom Label 4", "")),
-            "Variant Image": clean_value(first_row.get("Variant Image", "")),
-            "Variant Weight Unit": clean_value(first_row.get("Variant Weight Unit", "")),
-            "Variant Tax Code": clean_value(first_row.get("Variant Tax Code", "")),
-            "Cost per item": clean_value(first_row.get("Cost per item", 0), is_numeric=True),
+            "SEO Title": "",
+            "SEO Description": "",
+            "Google Shopping / Google Product Category": "",
+            "Google Shopping / Gender": "",
+            "Google Shopping / Age Group": "",
+            "Google Shopping / MPN": "",
+            "Google Shopping / AdWords Grouping": "",
+            "Google Shopping / AdWords Labels": "",
+            "Google Shopping / Condition": "",
+            "Google Shopping / Custom Product": "",
+            "Google Shopping / Custom Label 0": "",
+            "Google Shopping / Custom Label 1": "",
+            "Google Shopping / Custom Label 2": "",
+            "Google Shopping / Custom Label 3": "",
+            "Google Shopping / Custom Label 4": "",
+            "Variant Image": "",
+            "Variant Weight Unit": "",
+            "Variant Tax Code": "",
+            "Cost per item": clean_value(0, is_numeric=True),
             "Status": clean_value(first_row.get("Status", "active"))
         }
         
@@ -978,14 +1083,14 @@ if process_button or 'processed_data' in st.session_state:
                 "Option2 Value": clean_value(row["colours_list"]),
                 "Option3 Name": "",
                 "Option3 Value": "",
-                "Variant SKU": f"{clean_value(row.get('product code', ''))}",
+                "Variant SKU": f"{clean_value(get_column_value(row, column_mapping, 'product code', ''))}",
                 "Variant Grams": clean_value(0, is_numeric=True),
                 "Variant Inventory Tracker": "",
                 "Variant Inventory Qty": clean_value(row["Variant Inventory Qty"], is_numeric=True),
                 "Variant Inventory Policy": inventory_policy,
                 "Variant Fulfillment Service": "manual",
                 "Variant Compare At Price": clean_value(row["Variant Compare At Price"], is_numeric=True),
-                "Variant Price": clean_value(row.get("Variant Price", 0), is_numeric=True),
+                "Variant Price": clean_value(get_column_value(row, column_mapping, 'variant price', 0), is_numeric=True),
                 "Variant Requires Shipping": "TRUE",
                 "Variant Taxable": "TRUE",
                 "Image Src": "",
