@@ -1011,6 +1011,7 @@ if process_button or 'processed_data' in st.session_state:
         
         # Get product-level information from first row using normalized column access
         first_row = processed_rows[0]
+        has_sizes = any(clean_value(row["sizes_list"]) for row in processed_rows)
         has_colors = any(clean_value(row["colours_list"]) for row in processed_rows)
         first_variant = {
             "Handle": clean_value(handle),
@@ -1022,7 +1023,7 @@ if process_button or 'processed_data' in st.session_state:
             "Fabric": clean_value(get_column_value(first_row, column_mapping, 'fabric', '')),
             "Tags": clean_value(first_row["ai_tags"]),
             "Published": "TRUE" if str(clean_value(get_column_value(first_row, column_mapping, 'published', ''))).lower() == "active" else "FALSE",
-            "Option1 Name": "Size",
+            "Option1 Name": "Size" if has_sizes else "",
             "Option1 Value": clean_value(first_row["sizes_list"]),
             "Option2 Name": "Color" if has_colors else "",
             "Option2 Value": clean_value(first_row["colours_list"]),
