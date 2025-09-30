@@ -152,9 +152,7 @@ class WorkflowManager:
             return True  # Continue even if AI fails
     
     def execute_inventory_management(self, ui, data_processor, session):
-        """Step 5: Inventory management interface"""
-        ui.render_step_header("Inventory Management")
-        
+        """Step 5: Inventory management interface - clean main screen, all config in sidebar"""
         try:
             # Ensure data is processed first
             if session.get('processed_data') is None:
@@ -168,8 +166,10 @@ class WorkflowManager:
             # Initialize variant management
             data_processor.initialize_variants(processed_df, column_mapping, config)
             
-            # Show management interface
-            ui.render_inventory_management(config)
+            # Only show variant editor on main screen (no config options)
+            st.markdown("### 📋 Variant Quantity & Price Editor")
+            st.info("💡 Use the sidebar (⚙️ Configuration) to manage bulk settings, surcharges, and defaults. Edit individual variants below.")
+            
             ui.render_variant_editor(session.get_variants())
             
             return True

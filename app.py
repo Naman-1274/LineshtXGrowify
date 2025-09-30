@@ -133,7 +133,11 @@ class ShopifyCSVBuilder:
                 st.rerun()
     
     def _step_inventory_management(self):
-        """Step 5: Inventory Management"""
+        """Step 5: Inventory Management with configuration"""
+        # Show configuration in sidebar for this step
+        config = self.ui.render_sidebar_config(self.ai_service.is_enabled())
+        self.session.update_config(config)
+        
         if not self.workflow.execute_inventory_management(self.ui, self.data_processor, self.session):
             return
         
@@ -149,12 +153,8 @@ class ShopifyCSVBuilder:
                 st.rerun()
     
     def _step_generate_csv(self):
-        """Step 6: Generate Final CSV"""
-        # Show configuration in sidebar
-        config = self.ui.render_sidebar_config(self.ai_service.is_enabled())
-        self.session.update_config(config)
-        
-        # Generate CSV
+        """Step 6: Generate Final CSV (no configuration sidebar)"""
+        # Generate CSV using existing configuration
         if not self.workflow.execute_csv_generation(self.ui, self.data_processor, self.session):
             return
 

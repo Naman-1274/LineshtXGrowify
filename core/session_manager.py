@@ -114,12 +114,13 @@ class SessionManager:
             st.session_state.description_elements.pop()
     
     def get_variants(self):
-        """Get variant data"""
+        """Get variant data including extracted quantities"""
         return {
             'unique_variants': st.session_state.get('unique_variants', []),
             'variant_products': st.session_state.get('variant_products', {}),
             'variant_quantities': st.session_state.get('variant_quantities', {}),
-            'variant_compare_prices': st.session_state.get('variant_compare_prices', {})
+            'variant_compare_prices': st.session_state.get('variant_compare_prices', {}),
+            'extracted_quantities': st.session_state.get('extracted_quantities', {})
         }
     
     def is_mapping_complete(self):

@@ -324,7 +324,15 @@ class UIComponents:
         
         # Show mapping summary
         mapped_count = len([v for v in st.session_state.current_column_mapping.values() if v])
-        st.success(f"✅ {mapped_count} fields mapped • All {len(df.columns)} columns remain available for descriptions")
+        
+        # Add reset button
+        col1, col2 = st.columns([1, 3])
+        with col1:
+            if st.button("🔄 Reset All Mappings", help="Clear all column mappings and start fresh"):
+                st.session_state.current_column_mapping = {}
+                st.rerun()
+        with col2:
+            st.success(f"✅ {mapped_count} fields mapped • All {len(df.columns)} columns remain available for descriptions")
         
         return st.session_state.current_column_mapping.copy()
     
@@ -743,18 +751,17 @@ class UIComponents:
             st.dataframe(col_analysis, use_container_width=True)
     
     def render_inventory_management(self, config):
-        """Render inventory management interface"""
-        if config.get('bulk_qty_mode'):
-            st.info(f"📦 Bulk mode: Setting {config['bulk_qty']} for all variants")
-        if config.get('bulk_compare_price_mode'):
-            st.info(f"💰 Bulk compare price: Setting {config['bulk_compare_price']:.2f} for all variants")
+        """Inventory management - configuration handled in sidebar only"""
+        # All configuration is now handled in the sidebar
+        # This method is kept for compatibility but renders nothing on main screen
+        pass
     
     def render_variant_editor(self, variants_data):
-        """Render variant quantity/price editor"""
+        """Render variant quantity/price editor with extracted quantities displayed"""
         if not variants_data.get('unique_variants'):
             return
         
-        st.markdown("### 📋 Variant Management")
+        st.markdown("### Variant Management")
         
         # Group variants by product
         products = {}
@@ -767,10 +774,10 @@ class UIComponents:
         # Show first few products expanded
         for idx, (title, variants) in enumerate(products.items()):
             expanded = idx < 3
-            with st.expander(f"📦 {title} ({len(variants)} variants)", expanded=expanded):
+            with st.expander(f"{title} ({len(variants)} variants)", expanded=expanded):
                 for size, color in variants:
                     variant_key = f"{size}|{color}|{title}"
-                    col1, col2, col3 = st.columns([2, 1, 1])
+                    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
                     
                     with col1:
                         display = f"{size}" if size else "No Size"
@@ -779,17 +786,25 @@ class UIComponents:
                         st.text(display)
                     
                     with col2:
-                        current_qty = st.session_state.variant_quantities.get(variant_key, 0)
+                        # Get extracted quantity from data (if available)
+                        extracted_qty = variants_data.get('extracted_quantities', {}).get(variant_key, 0)
+                        if extracted_qty > 0:
+                            st.caption(f"Data: {extracted_qty}")
+                        else:
+                            st.caption("No data qty")
+                    
+                    with col3:
+                        current_qty = st.session_state.variant_quantities.get(variant_key, extracted_qty)
                         new_qty = st.number_input(
-                            "Qty", min_value=0, value=current_qty, step=1,
+                            "Qty", min_value=0, value=int(current_qty), step=1,
                             key=f"qty_{variant_key}", label_visibility="collapsed"
                         )
                         st.session_state.variant_quantities[variant_key] = new_qty
                     
-                    with col3:
+                    with col4:
                         current_price = st.session_state.variant_compare_prices.get(variant_key, 0.0)
                         new_price = st.number_input(
-                            "Compare Price", min_value=0.0, value=current_price, step=0.01,
+                            "Compare Price", min_value=0.0, value=float(current_price), step=0.01,
                             key=f"price_{variant_key}", label_visibility="collapsed"
                         )
                         st.session_state.variant_compare_prices[variant_key] = new_price
@@ -875,4 +890,4 @@ class UIComponents:
             - All variants are properly formatted for Shopify
             """)
         
-        return True 
+        return True
