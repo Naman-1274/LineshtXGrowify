@@ -1,11 +1,11 @@
-# frontend/ui_components.py - Enhanced UI components with step-based workflow and description builder
+# frontend/ui_components.py - Enhanced UI with complete Shopify field support including metafields
 import streamlit as st
 import pandas as pd
 import time
 from helpers.utils import get_column_value, clean_value
 
 class UIComponents:
-    """Enhanced UI components with step-based workflow and description builder"""
+    """Enhanced UI components with full Shopify field and metafield support"""
     
     def apply_styling(self):
         """Apply enhanced CSS styling with step indicators"""
@@ -45,13 +45,17 @@ class UIComponents:
             .confidence-high { color: #28a745; font-weight: bold; }
             .confidence-medium { color: #ffc107; font-weight: bold; }
             .confidence-low { color: #dc3545; font-weight: bold; }
-            .description-element {
-                background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px;
-                padding: 1rem; margin: 0.5rem 0;
-            }
             .preview-box {
-                border: 1px solid #ddd; padding: 1rem; background: #f9f9f9;
-                border-radius: 8px; margin: 1rem 0;
+                background: linear-gradient(45deg, #232526 0%, #414345 100%);
+                padding: 1rem; border-radius: 8px; color: white; margin: 1rem 0;
+            }
+            .metafield-section {
+                background: #e3f2fd; border-left: 4px solid #2196F3; 
+                padding: 1rem; margin: 1rem 0; border-radius: 4px;
+            }
+            .info-badge {
+                background: #2196F3; color: white; padding: 0.25rem 0.5rem;
+                border-radius: 12px; font-size: 0.75rem; margin-left: 0.5rem;
             }
         </style>
         """, unsafe_allow_html=True)
@@ -211,8 +215,8 @@ class UIComponents:
         st.dataframe(df.head(), use_container_width=True)
     
     def render_enhanced_column_mapping(self, df, mapping_result):
-        """Enhanced column mapping with complete Shopify fields and editable interface"""
-        st.header("🔄 Step 2: Review & Edit Column Mapping")
+        """Enhanced column mapping with complete Shopify fields including metafields"""
+        st.header("📊 Step 2: Review & Edit Column Mapping")
         
         # Show mapping summary
         col1, col2, col3 = st.columns(3)
@@ -223,51 +227,24 @@ class UIComponents:
         with col3:
             st.metric("📊 Total Columns", len(df.columns))
         
-        # Complete Shopify CSV fields - ALL official fields
+        # Complete Shopify CSV fields
         st.subheader("Map Your Columns to Shopify Fields")
-        st.info("📝 Map your data columns to Shopify CSV fields. Leave blank if not applicable. You can reuse columns in descriptions later.")
-        
-        # Complete list of Shopify CSV fields
-        shopify_fields = [
-            # Product Information
-            'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags', 'Published',
-            
-            # Options
-            'Option1 Name', 'Option1 Value', 'Option2 Name', 'Option2 Value', 'Option3 Name', 'Option3 Value',
-            
-            # Variant Information
-            'Variant SKU', 'Variant Grams', 'Variant Inventory Tracker', 'Variant Inventory Qty', 
-            'Variant Inventory Policy', 'Variant Fulfillment Service', 'Variant Price', 
-            'Variant Compare At Price', 'Variant Requires Shipping', 'Variant Taxable', 
-            'Variant Barcode', 'Variant Image', 'Variant Weight Unit', 'Variant Weight',
-            
-            # Images
-            'Image Src', 'Image Position', 'Image Alt Text',
-            
-            # Additional Product Fields
-            'Gift Card', 'SEO Title', 'SEO Description', 'Status',
-            
-            # Google Shopping Fields
-            'Google Shopping / Google Product Category', 'Google Shopping / Gender', 
-            'Google Shopping / Age Group', 'Google Shopping / MPN', 
-            'Google Shopping / AdWords Grouping', 'Google Shopping / AdWords Labels',
-            'Google Shopping / Condition', 'Google Shopping / Custom Product',
-            'Google Shopping / Custom Label 0', 'Google Shopping / Custom Label 1',
-            'Google Shopping / Custom Label 2', 'Google Shopping / Custom Label 3', 
-            'Google Shopping / Custom Label 4',
-            
-            # Cost and International Pricing
-            'Cost per item', 'Price / International', 'Compare At Price / International'
-        ]
+        st.info("🔍 Map your data columns to Shopify CSV fields. NEW: Now includes metafields for enhanced product data!")
         
         # Initialize mapping state if not exists
         if 'current_column_mapping' not in st.session_state:
             st.session_state.current_column_mapping = mapping_result.base_mapping.copy()
         
         # Create tabs for better organization
-        tab1, tab2, tab3, tab4 = st.tabs(["🔑 Essential Fields", "📋 Product Details", "🖼️ Images & SEO", "🛒 Google Shopping"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🔑 Essential Fields", 
+            "📋 Product Details", 
+            "🖼️ Images & SEO", 
+            "🛒 Google Shopping",
+            "🏷️ Metafields (NEW)"
+        ])
         
-        # Essential fields (most commonly used)
+        # Essential fields
         essential_fields = [
             'Handle', 'Title', 'Body (HTML)', 'Vendor', 'Product Category', 'Type', 'Tags', 'Published',
             'Option1 Value', 'Option2 Value', 'Variant SKU', 'Variant Price', 'Variant Compare At Price',
@@ -280,14 +257,18 @@ class UIComponents:
         
         # Product details
         product_fields = [
-            'Option1 Name', 'Option2 Name', 'Option3 Name', 'Option3 Value',
+            'Option1 Name', 'Option1 Linked To', 'Option2 Name', 'Option2 Linked To', 
+            'Option3 Name', 'Option3 Value', 'Option3 Linked To',
             'Variant Grams', 'Variant Inventory Tracker', 'Variant Fulfillment Service',
             'Variant Requires Shipping', 'Variant Taxable', 'Variant Barcode', 
-            'Variant Image', 'Variant Weight Unit', 'Variant Weight', 'Gift Card', 'Status'
+            'Variant Image', 'Variant Weight Unit', 'Variant Weight', 'Gift Card', 'Status',
+            'Unit Price Total Measure', 'Unit Price Total Measure Unit',
+            'Unit Price Base Measure', 'Unit Price Base Measure Unit'
         ]
         
         with tab2:
             st.markdown("**Additional product and variant details:**")
+            st.info("💡 NEW: Unit Price fields for pricing per measure (e.g., per kg, per liter)")
             self._render_mapping_section(df, product_fields, mapping_result.confidence_scores)
         
         # Images and SEO
@@ -316,6 +297,93 @@ class UIComponents:
             st.markdown("**Google Shopping and advertising fields:**")
             self._render_mapping_section(df, google_fields, mapping_result.confidence_scores)
         
+        # NEW: Metafields tab
+        metafield_fields = [
+            'Gender (product.metafields.custom.gender)',
+            'Google: Custom Product (product.metafields.mm-google-shopping.custom_product)',
+            'Age group (product.metafields.shopify.age-group)',
+            'Color (product.metafields.shopify.color-pattern)',
+            'Dress occasion (product.metafields.shopify.dress-occasion)',
+            'Dress style (product.metafields.shopify.dress-style)',
+            'Fabric (product.metafields.shopify.fabric)',
+            'Neckline (product.metafields.shopify.neckline)',
+            'Size (product.metafields.shopify.size)',
+            'Skirt/Dress length type (product.metafields.shopify.skirt-dress-length-type)',
+            'Sleeve length type (product.metafields.shopify.sleeve-length-type)',
+            'Target gender (product.metafields.shopify.target-gender)',
+            'Complementary products (product.metafields.shopify--discovery--product_recommendation.complementary_products)',
+            'Related products (product.metafields.shopify--discovery--product_recommendation.related_products)',
+            'Related products settings (product.metafields.shopify--discovery--product_recommendation.related_products_display)',
+            'Search product boosts (product.metafields.shopify--discovery--product_search_boost.queries)'
+        ]
+        
+        with tab5:
+            st.markdown('<div class="metafield-section">', unsafe_allow_html=True)
+            st.markdown("### 🏷️ **Product Metafields** <span class='info-badge'>NEW IN SHOPIFY</span>", unsafe_allow_html=True)
+            st.markdown("""
+            **What are Metafields?**  
+            Metafields are custom data fields that enhance your product information. They enable:
+            - Better product filtering and search
+            - Enhanced product recommendations
+            - Richer product details for customers
+            - Improved SEO and discoverability
+            
+            **Auto-Populated Metafields:**
+            - 🎨 **Color** - Auto-filled from your color column
+            - 🧵 **Fabric** - Auto-filled from your fabric column
+            - 📏 **Size** - Auto-filled from your size option
+            """)
+            st.markdown('</div>', unsafe_allow_html=True)
+            
+            # Product attribute metafields
+            st.markdown("#### 👕 Product Attributes")
+            product_metafields = [
+                'Gender (product.metafields.custom.gender)',
+                'Age group (product.metafields.shopify.age-group)',
+                'Color (product.metafields.shopify.color-pattern)',
+                'Fabric (product.metafields.shopify.fabric)',
+                'Size (product.metafields.shopify.size)',
+                'Target gender (product.metafields.shopify.target-gender)'
+            ]
+            self._render_mapping_section(df, product_metafields, mapping_result.confidence_scores, show_auto_populate=True)
+            
+            # Fashion-specific metafields
+            st.markdown("#### 👗 Fashion & Apparel")
+            fashion_metafields = [
+                'Dress occasion (product.metafields.shopify.dress-occasion)',
+                'Dress style (product.metafields.shopify.dress-style)',
+                'Neckline (product.metafields.shopify.neckline)',
+                'Skirt/Dress length type (product.metafields.shopify.skirt-dress-length-type)',
+                'Sleeve length type (product.metafields.shopify.sleeve-length-type)'
+            ]
+            self._render_mapping_section(df, fashion_metafields, mapping_result.confidence_scores)
+            
+            # Discovery & recommendations
+            st.markdown("#### 🔍 Product Discovery & Recommendations")
+            discovery_metafields = [
+                'Complementary products (product.metafields.shopify--discovery--product_recommendation.complementary_products)',
+                'Related products (product.metafields.shopify--discovery--product_recommendation.related_products)',
+                'Related products settings (product.metafields.shopify--discovery--product_recommendation.related_products_display)',
+                'Search product boosts (product.metafields.shopify--discovery--product_search_boost.queries)'
+            ]
+            with st.expander("ℹ️ Advanced Discovery Settings", expanded=False):
+                st.markdown("""
+                **Product Recommendations:**
+                - Complementary products: Suggest items that go well together
+                - Related products: Show similar items
+                
+                **Search Optimization:**
+                - Search boosts: Prioritize products for specific search terms
+                """)
+                self._render_mapping_section(df, discovery_metafields, mapping_result.confidence_scores)
+            
+            # Google Shopping metafield
+            st.markdown("#### 🛒 Google Shopping")
+            google_metafields = [
+                'Google: Custom Product (product.metafields.mm-google-shopping.custom_product)'
+            ]
+            self._render_mapping_section(df, google_metafields, mapping_result.confidence_scores)
+        
         # Show column reuse info
         used_columns = [col for col in st.session_state.current_column_mapping.values() if col]
         reused_columns = [col for col in set(used_columns) if used_columns.count(col) > 1]
@@ -324,6 +392,7 @@ class UIComponents:
         
         # Show mapping summary
         mapped_count = len([v for v in st.session_state.current_column_mapping.values() if v])
+        metafield_count = len([k for k, v in st.session_state.current_column_mapping.items() if v and 'metafields' in k])
         
         # Add reset button
         col1, col2 = st.columns([1, 3])
@@ -332,19 +401,31 @@ class UIComponents:
                 st.session_state.current_column_mapping = {}
                 st.rerun()
         with col2:
-            st.success(f"✅ {mapped_count} fields mapped • All {len(df.columns)} columns remain available for descriptions")
+            if metafield_count > 0:
+                st.success(f"✅ {mapped_count} fields mapped ({metafield_count} metafields) • All {len(df.columns)} columns available for descriptions")
+            else:
+                st.success(f"✅ {mapped_count} fields mapped • All {len(df.columns)} columns available for descriptions")
         
         return st.session_state.current_column_mapping.copy()
     
-    def _render_mapping_section(self, df, fields, confidence_scores):
-        """Render a section of mapping fields"""
+    def _render_mapping_section(self, df, fields, confidence_scores, show_auto_populate=False):
+        """Render a section of mapping fields with optional auto-populate indicators"""
+        auto_populate_fields = {
+            'Color (product.metafields.shopify.color-pattern)': 'colour',
+            'Fabric (product.metafields.shopify.fabric)': 'fabric',
+            'Size (product.metafields.shopify.size)': 'size'
+        }
+        
         for field in fields:
             col1, col2, col3 = st.columns([2, 3, 1])
             
             with col1:
-                # Show field name with tooltip for important fields
+                # Show field name with indicators
                 if field in ['Handle', 'Title', 'Variant SKU', 'Variant Price']:
                     st.markdown(f"**{field}** ⭐")
+                elif show_auto_populate and field in auto_populate_fields:
+                    st.markdown(f"**{field}** 🤖")
+                    st.caption("Auto-populated")
                 else:
                     st.text(field)
             
@@ -360,7 +441,7 @@ class UIComponents:
                     "Map to column:",
                     options=available_columns,
                     index=available_columns.index(current) if current in available_columns else 0,
-                    key=f"mapping_{field}_{hash(field)}",  # Unique key to prevent conflicts
+                    key=f"mapping_{field}_{hash(field)}",
                     label_visibility="collapsed"
                 )
                 
@@ -450,7 +531,6 @@ class UIComponents:
         
         for i, element in enumerate(description_elements):
             with st.container():
-                st.markdown(f'<div class="description-element">', unsafe_allow_html=True)
                 st.markdown(f"**Element {i+1}**")
                 
                 col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
@@ -751,9 +831,6 @@ class UIComponents:
             st.dataframe(col_analysis, use_container_width=True)
     
     def render_inventory_management(self, config):
-        """Inventory management - configuration handled in sidebar only"""
-        # All configuration is now handled in the sidebar
-        # This method is kept for compatibility but renders nothing on main screen
         pass
     
     def render_variant_editor(self, variants_data):
@@ -802,11 +879,20 @@ class UIComponents:
                         st.session_state.variant_quantities[variant_key] = new_qty
                     
                     with col4:
-                        current_price = st.session_state.variant_compare_prices.get(variant_key, 0.0)
+                        extracted_compare_prices = variants_data.get('extracted_compare_prices', {})
+                        extracted_price = extracted_compare_prices.get(variant_key, 0.0)
+                        
+                        # Show extracted price directly in input box
                         new_price = st.number_input(
-                            "Compare Price", min_value=0.0, value=float(current_price), step=0.01,
-                            key=f"price_{variant_key}", label_visibility="collapsed"
+                            "Compare Price", 
+                            min_value=0.0, 
+                            value=float(extracted_price), 
+                            step=0.01,
+                            key=f"price_{variant_key}", 
+                            label_visibility="collapsed",
+                            format="%.2f"
                         )
+                        # Update session state with the value
                         st.session_state.variant_compare_prices[variant_key] = new_price
     
     def show_final_statistics(self, df):

@@ -120,7 +120,8 @@ class SessionManager:
             'variant_products': st.session_state.get('variant_products', {}),
             'variant_quantities': st.session_state.get('variant_quantities', {}),
             'variant_compare_prices': st.session_state.get('variant_compare_prices', {}),
-            'extracted_quantities': st.session_state.get('extracted_quantities', {})
+            'extracted_quantities': st.session_state.get('extracted_quantities', {}),
+            'extracted_compare_prices': st.session_state.get('extracted_compare_prices', {})
         }
     
     def is_mapping_complete(self):
