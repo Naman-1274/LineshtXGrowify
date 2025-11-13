@@ -597,7 +597,7 @@ class UIComponents:
         return description_elements
     
     def _generate_description_html_no_decimals(self, elements, row):
-        """FIXED: Generate HTML description with NO DECIMALS in preview"""
+        """FIXED: Generate HTML - tags ONLY on labels, values ALWAYS in <p>"""
         html_parts = []
         
         for element in elements:
@@ -609,21 +609,24 @@ class UIComponents:
                 # Use no-decimal cleaning
                 value = self._clean_value_no_decimals(row[column], column)
                 if value:
-                    # Format content
+                    # Format with proper HTML structure
                     if label and label.strip():
-                        content = f"{label}: {value}"
+                        # Label exists - apply HTML tag to label only
+                        if html_tag == 'none':
+                            # No tags - plain text label with value in <p>
+                            html_parts.append(f"{label}: <p>{value}</p>")
+                        elif html_tag == 'br':
+                            # Label with line break, value in <p>
+                            html_parts.append(f"{label}:<br><p>{value}</p>")
+                        elif html_tag == 'li':
+                            # List item - strong label, value in <p>
+                            html_parts.append(f"<li><strong>{label}:</strong> <p>{value}</p></li>")
+                        else:
+                            # Apply tag to label only (h3, h4, strong, etc.), value in <p>
+                            html_parts.append(f"<{html_tag}>{label}:</{html_tag}><p>{value}</p>")
                     else:
-                        content = str(value)
-                    
-                    # Apply HTML tag
-                    if html_tag == 'br':
-                        html_parts.append(f"{content}<br>")
-                    elif html_tag == 'li':
-                        html_parts.append(f"<li>{content}</li>")
-                    elif html_tag == 'none':
-                        html_parts.append(content)
-                    else:
-                        html_parts.append(f"<{html_tag}>{content}</{html_tag}>")
+                        # No label - just value in <p>
+                        html_parts.append(f"<p>{value}</p>")
         
         return "".join(html_parts)
     
