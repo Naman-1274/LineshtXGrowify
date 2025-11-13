@@ -1,12 +1,10 @@
-# frontend/ui_components.py - Enhanced UI with complete Shopify field support including metafields
+# frontend/ui_components.py - FIXED: No decimals in preview
 import streamlit as st
 import pandas as pd
 import time
 from helpers.utils import get_column_value, clean_value
 
-class UIComponents:
-    """Enhanced UI components with full Shopify field and metafield support"""
-    
+class UIComponents:    
     def apply_styling(self):
         """Apply enhanced CSS styling with step indicators"""
         st.markdown("""
@@ -568,14 +566,16 @@ class UIComponents:
                         key=f"order_{i}"
                     )
                 
-                # Show sample data
+                # Show sample data - FIXED: Use _clean_value_no_decimals
                 if element['column'] and element['column'] in df.columns:
                     sample = df[element['column']].dropna().iloc[0] if not df[element['column']].dropna().empty else "No data"
-                    st.caption(f"Sample: {str(sample)[:100]}...")
+                    # Clean sample to remove decimals
+                    sample_clean = self._clean_value_no_decimals(sample, element['column'])
+                    st.caption(f"Sample: {str(sample_clean)[:100]}...")
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
-        # Live Preview
+        # Live Preview - FIXED: Use no-decimal version
         if description_elements:
             st.subheader("Live Preview")
             
@@ -586,7 +586,7 @@ class UIComponents:
             # Generate preview
             if len(df) > 0 and sorted_elements:
                 sample_row = df.iloc[0]
-                preview_html = self._generate_description_html(sorted_elements, sample_row)
+                preview_html = self._generate_description_html_no_decimals(sorted_elements, sample_row)
                 
                 st.markdown("**HTML Output:**")
                 st.markdown(f'<div class="preview-box">{preview_html}</div>', unsafe_allow_html=True)
@@ -596,8 +596,8 @@ class UIComponents:
         
         return description_elements
     
-    def _generate_description_html(self, elements, row):
-        """Generate HTML description from elements for preview"""
+    def _generate_description_html_no_decimals(self, elements, row):
+        """FIXED: Generate HTML description with NO DECIMALS in preview"""
         html_parts = []
         
         for element in elements:
@@ -606,7 +606,8 @@ class UIComponents:
             html_tag = element.get('html_tag', 'p')
             
             if column and column in row.index:
-                value = self._clean_value(row[column])
+                # Use no-decimal cleaning
+                value = self._clean_value_no_decimals(row[column], column)
                 if value:
                     # Format content
                     if label and label.strip():
@@ -626,8 +627,36 @@ class UIComponents:
         
         return "".join(html_parts)
     
+    def _clean_value_no_decimals(self, value, column_name: str = '') -> str:
+        """FIXED: Remove decimals from ALL numeric values that should be integers"""
+        if pd.isna(value) or str(value).strip() == '':
+            return ""
+        
+        # Fields that should ALWAYS be integers (no decimals)
+        integer_fields = [
+            'no of components', 'components', 'number_of_components', 
+            'component_count', 'quantity', 'qty', 'count', 'pieces',
+            'set', 'items', 'number', 'no', 'component'
+        ]
+        
+        column_lower = column_name.lower() if column_name else ''
+        should_be_integer = any(field in column_lower for field in integer_fields)
+        
+        # Try to convert to number and remove decimal if needed
+        try:
+            num_value = float(str(value).strip())
+            # If it's a whole number OR should be integer field, remove decimal
+            if should_be_integer or num_value == int(num_value):
+                return str(int(num_value))
+            else:
+                # Keep as is for actual decimal values (like prices)
+                return str(value).strip()
+        except (ValueError, TypeError):
+            # Not a number, return as string
+            return str(value).strip()
+    
     def _clean_value(self, value):
-        """Clean value for display"""
+        """Clean value for display (legacy support)"""
         if pd.isna(value) or str(value).strip() == '':
             return ""
         return str(value).strip()
