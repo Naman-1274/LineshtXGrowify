@@ -602,13 +602,8 @@ class UIComponents:
         
         return description_elements
     
-<<<<<<< HEAD
-    def _generate_description_html_inline(self, elements, row):
-        """FIXED: Generate HTML with label and value on SAME LINE"""
-=======
     def _generate_description_html_no_decimals(self, elements, row):
         """FIXED: Generate HTML description with NO DECIMALS in preview"""
->>>>>>> parent of 0cabb09 (feat: Refactor HTML generation to apply tags only on labels, with values wrapped in <p> for improved structure)
         html_parts = []
         
         for element in elements:
@@ -619,24 +614,6 @@ class UIComponents:
             if column and column in row.index:
                 value = self._clean_value_no_decimals(row[column], column)
                 if value:
-<<<<<<< HEAD
-                    # FIXED: Format with label and value on same line
-                    if label and label.strip():
-                        # Combine label and value in ONE line
-                        full_text = f"{label}: {value}"
-                    else:
-                        full_text = str(value)
-                    
-                    # Apply HTML tag to the ENTIRE line
-                    if html_tag == 'none':
-                        html_parts.append(full_text)
-                    elif html_tag == 'br':
-                        html_parts.append(f"{full_text}<br>")
-                    elif html_tag == 'li':
-                        html_parts.append(f"<li>{full_text}</li>")
-                    else:
-                        html_parts.append(f"<{html_tag}>{full_text}</{html_tag}>")
-=======
                     # Format content
                     if label and label.strip():
                         content = f"{label}: {value}"
@@ -652,7 +629,6 @@ class UIComponents:
                         html_parts.append(content)
                     else:
                         html_parts.append(f"<{html_tag}>{content}</{html_tag}>")
->>>>>>> parent of 0cabb09 (feat: Refactor HTML generation to apply tags only on labels, with values wrapped in <p> for improved structure)
         
         return "".join(html_parts)
     
