@@ -1,4 +1,4 @@
-# backend/data_processor.py - Updated for latest Shopify CSV format
+# backend/data_processor.py - COMPLETE FILE with default_qty fix
 import pandas as pd
 import streamlit as st
 from helpers.utils import get_column_value, clean_value, sort_sizes_with_quantities
@@ -17,11 +17,14 @@ class DataProcessor:
         return df_with_handles
     
     def initialize_variants(self, df, column_mapping, config):
-        """Initialize variant management data with extracted quantities from size data"""
+        """FIXED: Initialize variant management data with dynamic default_qty from config"""
         unique_variants = []
         variant_products = {}
         extracted_quantities = {}
         extracted_compare_prices = {}
+        
+        # FIXED: Get current default_qty from config
+        current_default_qty = config.get('default_qty', 10)
         
         for _, row in df.iterrows():
             size = clean_value(row.get('sizes_list', ''))
@@ -45,14 +48,29 @@ class DataProcessor:
         st.session_state.unique_variants = unique_variants
         st.session_state.variant_products = variant_products
         
-        # Initialize quantity mappings with extracted quantities
+        # FIXED: Initialize quantity mappings with CURRENT default_qty from config
         if 'variant_quantities' not in st.session_state:
             st.session_state.variant_quantities = {}
             for size, color, title in unique_variants:
                 variant_key = f"{size}|{color}|{title}"
                 extracted_qty = extracted_quantities.get(variant_key, 0)
-                default_qty = config.get('default_qty', 10)
-                st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else default_qty
+                # Use extracted qty if > 0, otherwise use CURRENT default_qty from config
+                st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
+        else:
+            # FIXED: Update existing quantities to reflect new default_qty
+            # For variants without extracted quantity, update to new default
+            for size, color, title in unique_variants:
+                variant_key = f"{size}|{color}|{title}"
+                if variant_key in st.session_state.variant_quantities:
+                    # Check if this variant has extracted quantity
+                    extracted_qty = extracted_quantities.get(variant_key, 0)
+                    if extracted_qty == 0:
+                        # No extracted quantity, use current default from config
+                        st.session_state.variant_quantities[variant_key] = current_default_qty
+                else:
+                    # New variant, initialize with extracted or current default
+                    extracted_qty = extracted_quantities.get(variant_key, 0)
+                    st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
         
         # Initialize compare price mappings
         if 'variant_compare_prices' not in st.session_state:

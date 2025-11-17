@@ -58,10 +58,10 @@ class WorkflowManager:
             
             # Show current mapping summary for user confirmation
             if cleaned_mapping:
-                with st.expander("📋 Current Mapping Summary", expanded=False):
+                with st.expander("ðŸ“‹ Current Mapping Summary", expanded=False):
                     st.write("**Active mappings:**")
                     for shopify_field, user_column in cleaned_mapping.items():
-                        st.write(f"• **{shopify_field}** ← {user_column}")
+                        st.write(f"â€¢ **{shopify_field}** â† {user_column}")
             
             # Auto-confirm mapping (user can always go back to modify)
             session.set_mapping_complete(True)
@@ -167,8 +167,8 @@ class WorkflowManager:
             data_processor.initialize_variants(processed_df, column_mapping, config)
             
             # Only show variant editor on main screen (no config options)
-            st.markdown("### 📋 Variant Quantity & Price Editor")
-            st.info("💡 Use the sidebar (⚙️ Configuration) to manage bulk settings, surcharges, and defaults. Edit individual variants below.")
+            st.markdown("### ðŸ“‹ Variant Quantity & Price Editor")
+            st.info("ðŸ’¡ Use the sidebar (âš™ï¸ Configuration) to manage bulk settings, surcharges, and defaults. Edit individual variants below.")
             
             ui.render_variant_editor(session.get_variants())
             
