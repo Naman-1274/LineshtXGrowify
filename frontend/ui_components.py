@@ -1,4 +1,4 @@
-# frontend/ui_components.py - COMPLETE FILE with all fixes
+# frontend/ui_components.py - FIXED: No decimals in preview
 import streamlit as st
 import pandas as pd
 import time
@@ -6,7 +6,7 @@ from helpers.utils import get_column_value, clean_value
 
 class UIComponents:    
     def apply_styling(self):
-        """Apply enhanced CSS styling with 5-step indicators"""
+        """Apply enhanced CSS styling with step indicators"""
         st.markdown("""
         <style>
             .main-header {
@@ -59,7 +59,7 @@ class UIComponents:
         """, unsafe_allow_html=True)
     
     def render_header_with_progress(self):
-        """Render application header with 5-step progress indicator"""
+        """Render application header with step progress indicator"""
         st.markdown("""
         <div class="main-header">
             <h1>🛍️ Advanced Shopify CSV Builder</h1>
@@ -67,14 +67,11 @@ class UIComponents:
         </div>
         """, unsafe_allow_html=True)
         
-        # 5-step progress indicator
+        # Step progress indicator
         current_step = st.session_state.get('step', 1)
         steps = [
-            "Upload", 
-            "Map Columns", 
-            "Build Descriptions", 
-            "Configure & Inventory",
-            "Generate CSV"
+            "Upload", "Map Columns", "Build Descriptions", 
+            "AI Processing", "Inventory", "Generate CSV"
         ]
         
         progress_html = '<div class="step-progress">'
@@ -134,8 +131,7 @@ class UIComponents:
                 "Default Quantity", 
                 min_value=0, 
                 value=config.get('default_qty', 10), 
-                step=1,
-                key="sidebar_default_qty"
+                step=1
             )
             
             config['bulk_qty_mode'] = st.checkbox("Bulk Quantity Override", value=config.get('bulk_qty_mode', False))
@@ -173,14 +169,11 @@ class UIComponents:
                 st.session_state.clear()
                 st.rerun()
             
-            # Save config back to session
-            st.session_state.config = config
-            
             return config
     
     def render_file_upload(self):
         """Enhanced file upload section with metrics"""
-        st.header("📂 Step 1: Upload Your Product Data")
+        st.header("📁 Step 1: Upload Your Product Data")
         
         col1, col2, col3 = st.columns([3, 1, 1])
         
@@ -465,12 +458,12 @@ class UIComponents:
                     st.caption("")
     
     def render_description_builder(self, df, column_mapping):
-        """FIXED: Dynamic description builder with inline HTML preview"""
+        """Dynamic description builder interface"""
         st.header("📝 Step 3: Build Product Descriptions")
         
         st.info("🎨 Create dynamic product descriptions by selecting columns and customizing their display format.")
         
-        # Get available columns
+        # Get available columns (ALL columns - including mapped ones for maximum flexibility)
         all_columns = list(df.columns)
         
         # Show which columns are used in main template for reference
@@ -573,15 +566,16 @@ class UIComponents:
                         key=f"order_{i}"
                     )
                 
-                # Show sample data
+                # Show sample data - FIXED: Use _clean_value_no_decimals
                 if element['column'] and element['column'] in df.columns:
                     sample = df[element['column']].dropna().iloc[0] if not df[element['column']].dropna().empty else "No data"
+                    # Clean sample to remove decimals
                     sample_clean = self._clean_value_no_decimals(sample, element['column'])
                     st.caption(f"Sample: {str(sample_clean)[:100]}...")
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
-        # FIXED: Live Preview - label and value on SAME LINE
+        # Live Preview - FIXED: Use no-decimal version
         if description_elements:
             st.subheader("Live Preview")
             
@@ -592,7 +586,7 @@ class UIComponents:
             # Generate preview
             if len(df) > 0 and sorted_elements:
                 sample_row = df.iloc[0]
-                preview_html = self._generate_description_html_inline(sorted_elements, sample_row)
+                preview_html = self._generate_description_html_no_decimals(sorted_elements, sample_row)
                 
                 st.markdown("**HTML Output:**")
                 st.markdown(f'<div class="preview-box">{preview_html}</div>', unsafe_allow_html=True)
@@ -612,23 +606,27 @@ class UIComponents:
             html_tag = element.get('html_tag', 'p')
             
             if column and column in row.index:
+                # Use no-decimal cleaning
                 value = self._clean_value_no_decimals(row[column], column)
                 if value:
-                    # Format content
+                    # Format with proper HTML structure
                     if label and label.strip():
-                        content = f"{label}: {value}"
+                        # Label exists - apply HTML tag to label only
+                        if html_tag == 'none':
+                            # No tags - plain text label with value in <p>
+                            html_parts.append(f"{label}: <p>{value}</p>")
+                        elif html_tag == 'br':
+                            # Label with line break, value in <p>
+                            html_parts.append(f"{label}:<br><p>{value}</p>")
+                        elif html_tag == 'li':
+                            # List item - strong label, value in <p>
+                            html_parts.append(f"<li><strong>{label}:</strong> <p>{value}</p></li>")
+                        else:
+                            # Apply tag to label only (h3, h4, strong, etc.), value in <p>
+                            html_parts.append(f"<{html_tag}>{label}:</{html_tag}><p>{value}</p>")
                     else:
-                        content = str(value)
-                    
-                    # Apply HTML tag
-                    if html_tag == 'br':
-                        html_parts.append(f"{content}<br>")
-                    elif html_tag == 'li':
-                        html_parts.append(f"<li>{content}</li>")
-                    elif html_tag == 'none':
-                        html_parts.append(content)
-                    else:
-                        html_parts.append(f"<{html_tag}>{content}</{html_tag}>")
+                        # No label - just value in <p>
+                        html_parts.append(f"<p>{value}</p>")
         
         return "".join(html_parts)
     
@@ -874,10 +872,6 @@ class UIComponents:
         
         st.markdown("### Variant Management")
         
-        # Initialize user_edited_quantities tracking
-        if 'user_edited_quantities' not in st.session_state:
-            st.session_state.user_edited_quantities = set()
-        
         # Group variants by product
         products = {}
         for variant_key in variants_data['unique_variants']:
@@ -909,19 +903,11 @@ class UIComponents:
                             st.caption("No data qty")
                     
                     with col3:
-                        # FIXED: Use config's default_qty and track user edits
-                        config = st.session_state.get('config', {})
-                        default_qty = config.get('default_qty', 10)
-                        current_qty = st.session_state.variant_quantities.get(variant_key, extracted_qty if extracted_qty > 0 else default_qty)
+                        current_qty = st.session_state.variant_quantities.get(variant_key, extracted_qty)
                         new_qty = st.number_input(
                             "Qty", min_value=0, value=int(current_qty), step=1,
                             key=f"qty_{variant_key}", label_visibility="collapsed"
                         )
-                        
-                        # FIXED: Track if user manually changed this quantity
-                        if new_qty != current_qty:
-                            st.session_state.user_edited_quantities.add(variant_key)
-                        
                         st.session_state.variant_quantities[variant_key] = new_qty
                     
                     with col4:

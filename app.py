@@ -1,4 +1,4 @@
-# app.py - FIXED: 5-step workflow with AI in sidebar
+# app.py - Enhanced Main Application with Step-based Workflow
 import os
 import streamlit as st
 from dotenv import load_dotenv
@@ -15,7 +15,7 @@ from helpers.file_handler import FileHandler
 load_dotenv()
 
 class ShopifyCSVBuilder:
-    """Main application class with 5-step workflow"""
+    """Main application class with enhanced step-based workflow management"""
     
     def __init__(self):
         self.workflow = WorkflowManager()
@@ -49,7 +49,7 @@ class ShopifyCSVBuilder:
         )
     
     def _execute_step_workflow(self):
-        """Execute the 5-step workflow"""
+        """Execute the step-based workflow"""
         current_step = self.session.get_current_step()
         
         if current_step == 1:
@@ -59,12 +59,14 @@ class ShopifyCSVBuilder:
         elif current_step == 3:
             self._step_description_builder()
         elif current_step == 4:
-            self._step_inventory_management()
+            self._step_ai_processing()
         elif current_step == 5:
+            self._step_inventory_management()
+        elif current_step == 6:
             self._step_generate_csv()
     
     def _step_upload(self):
-        """Step 1: File Upload"""
+        """Step 1: File Upload with enhanced UI"""
         if not self.workflow.execute_file_upload(self.ui, self.file_handler):
             return
         
@@ -75,7 +77,7 @@ class ShopifyCSVBuilder:
                 st.rerun()
     
     def _step_mapping(self):
-        """Step 2: Enhanced Column Mapping"""
+        """Step 2: Enhanced Column Mapping with editable interface"""
         if not self.workflow.execute_column_mapping_enhanced(self.ui, self.session):
             return
         
@@ -102,17 +104,21 @@ class ShopifyCSVBuilder:
                 self.session.set_current_step(2)
                 st.rerun()
         with col2:
-            if st.button("Continue to Configuration & Inventory →", type="primary"):
+            if st.button("Continue to AI Processing →", type="primary"):
                 self.session.set_current_step(4)
                 st.rerun()
     
-    def _step_inventory_management(self):
-        """Step 4: Configuration & Inventory Management (AI + Settings)"""
-        # Show configuration in sidebar INCLUDING AI mode
-        config = self.ui.render_sidebar_config(self.ai_service.is_enabled())
-        self.session.update_config(config)
+    def _step_ai_processing(self):
+        """Step 4: AI Enhancement (if enabled)"""
+        config = self.session.get_config()
         
-        if not self.workflow.execute_inventory_management(self.ui, self.data_processor, self.session):
+        if config['mode'] == "Default template (no AI)" or not self.ai_service.is_enabled():
+            # Skip AI processing, go directly to inventory
+            self.session.set_current_step(5)
+            st.rerun()
+            return
+        
+        if not self.workflow.execute_ai_processing(self.ui, self.ai_service, self.session):
             return
         
         # Navigation
@@ -122,25 +128,33 @@ class ShopifyCSVBuilder:
                 self.session.set_current_step(3)
                 st.rerun()
         with col2:
-            if st.button("Generate Shopify CSV →", type="primary"):
+            if st.button("Continue to Inventory →", type="primary"):
                 self.session.set_current_step(5)
                 st.rerun()
     
-    def _step_generate_csv(self):
-        """Step 5: Generate Final CSV"""
-        # Process AI if enabled before generating CSV
-        config = self.session.get_config()
-        if config['mode'] != "Default template (no AI)" and self.ai_service.is_enabled():
-            # Process with AI before generating CSV
-            if self.session.get('processed_data') is None:
-                self.workflow.execute_data_processing(self.ui, self.data_processor, self.session)
-            
-            processed_df = self.session.get('processed_data')
-            column_mapping = self.session.get_mappings()
-            enhanced_df = self.ai_service.process_descriptions(processed_df, column_mapping, config['mode'])
-            self.session.set('processed_data', enhanced_df)
+    def _step_inventory_management(self):
+        """Step 5: Inventory Management with configuration"""
+        # Show configuration in sidebar for this step
+        config = self.ui.render_sidebar_config(self.ai_service.is_enabled())
+        self.session.update_config(config)
         
-        # Generate CSV
+        if not self.workflow.execute_inventory_management(self.ui, self.data_processor, self.session):
+            return
+        
+        # Navigation
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("← Back to AI Processing"):
+                self.session.set_current_step(4)
+                st.rerun()
+        with col2:
+            if st.button("Generate Shopify CSV →", type="primary"):
+                self.session.set_current_step(6)
+                st.rerun()
+    
+    def _step_generate_csv(self):
+        """Step 6: Generate Final CSV (no configuration sidebar)"""
+        # Generate CSV using existing configuration
         if not self.workflow.execute_csv_generation(self.ui, self.data_processor, self.session):
             return
 

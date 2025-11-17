@@ -1,4 +1,4 @@
-# backend/data_processor.py - COMPLETE FILE with default_qty fix
+# backend/data_processor.py - Updated for latest Shopify CSV format
 import pandas as pd
 import streamlit as st
 from helpers.utils import get_column_value, clean_value, sort_sizes_with_quantities
@@ -17,14 +17,11 @@ class DataProcessor:
         return df_with_handles
     
     def initialize_variants(self, df, column_mapping, config):
-        """FIXED: Initialize variant management data with dynamic default_qty from config"""
+        """Initialize variant management data with extracted quantities from size data"""
         unique_variants = []
         variant_products = {}
         extracted_quantities = {}
         extracted_compare_prices = {}
-        
-        # FIXED: Get current default_qty from config
-        current_default_qty = config.get('default_qty', 10)
         
         for _, row in df.iterrows():
             size = clean_value(row.get('sizes_list', ''))
@@ -48,29 +45,14 @@ class DataProcessor:
         st.session_state.unique_variants = unique_variants
         st.session_state.variant_products = variant_products
         
-        # FIXED: Always update ALL quantities based on current config
-        # This ensures changes in sidebar default_qty are immediately reflected
+        # Initialize quantity mappings with extracted quantities
         if 'variant_quantities' not in st.session_state:
             st.session_state.variant_quantities = {}
-        
-        # FIXED: Check if user has manually edited any quantities
-        if 'user_edited_quantities' not in st.session_state:
-            st.session_state.user_edited_quantities = set()
-        
-        for size, color, title in unique_variants:
-            variant_key = f"{size}|{color}|{title}"
-            extracted_qty = extracted_quantities.get(variant_key, 0)
-            
-            # FIXED: Only update if:
-            # 1. Variant doesn't exist yet, OR
-            # 2. User hasn't manually edited this variant, AND it has no extracted quantity
-            if variant_key not in st.session_state.variant_quantities:
-                # New variant - use extracted or current default
-                st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
-            elif variant_key not in st.session_state.user_edited_quantities and extracted_qty == 0:
-                # Existing variant that wasn't manually edited and has no extracted qty
-                # Update to new default_qty from config
-                st.session_state.variant_quantities[variant_key] = current_default_qty
+            for size, color, title in unique_variants:
+                variant_key = f"{size}|{color}|{title}"
+                extracted_qty = extracted_quantities.get(variant_key, 0)
+                default_qty = config.get('default_qty', 10)
+                st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else default_qty
         
         # Initialize compare price mappings
         if 'variant_compare_prices' not in st.session_state:

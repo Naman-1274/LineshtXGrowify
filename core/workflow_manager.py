@@ -1,4 +1,4 @@
-# core/workflow_manager.py - FIXED: Re-initialize variants when config changes
+# core/workflow_manager.py - Enhanced workflow management with step-based flow and description builder
 import streamlit as st
 from helpers.column_mapper import ColumnMapper
 from helpers.description_generator import DescriptionGenerator
@@ -152,11 +152,8 @@ class WorkflowManager:
             return True  # Continue even if AI fails
     
     def execute_inventory_management(self, ui, data_processor, session):
-        """Step 4: FIXED - Re-initialize variants when config changes"""
+        """Step 5: Inventory management interface - clean main screen, all config in sidebar"""
         try:
-            # Get current config from session
-            config = session.get_config()
-            
             # Ensure data is processed first
             if session.get('processed_data') is None:
                 if not self.execute_data_processing(ui, data_processor, session):
@@ -164,17 +161,10 @@ class WorkflowManager:
             
             processed_df = session.get('processed_data')
             column_mapping = session.get_mappings()
+            config = session.get_config()
             
-            # FIXED: Track if default_qty changed
-            prev_default_qty = st.session_state.get('prev_default_qty', None)
-            current_default_qty = config.get('default_qty', 10)
-            
-            # FIXED: Always re-initialize if default_qty changed OR if not initialized yet
-            if prev_default_qty != current_default_qty or 'variant_quantities' not in st.session_state:
-                # Re-initialize variant management with NEW config
-                data_processor.initialize_variants(processed_df, column_mapping, config)
-                # Store current default_qty for next comparison
-                st.session_state.prev_default_qty = current_default_qty
+            # Initialize variant management
+            data_processor.initialize_variants(processed_df, column_mapping, config)
             
             # Only show variant editor on main screen (no config options)
             st.markdown("### 📋 Variant Quantity & Price Editor")
@@ -189,7 +179,7 @@ class WorkflowManager:
             return False
     
     def execute_csv_generation(self, ui, data_processor, session):
-        """Step 5: Generate final Shopify CSV"""
+        """Step 6: Generate final Shopify CSV"""
         ui.render_step_header("Generate Shopify CSV")
         
         try:
@@ -240,7 +230,7 @@ class WorkflowManager:
             return False
     
     def _generate_description_html(self, elements, row):
-        """Generate HTML description from elements - INLINE VERSION"""
+        """Generate HTML description from elements"""
         html_parts = []
         
         for element in elements:
@@ -251,21 +241,21 @@ class WorkflowManager:
             if column and column in row.index:
                 value = self._clean_value(row[column])
                 if value:
-                    # FIXED: Combine label and value on SAME LINE
+                    # Format content
                     if label and label.strip():
-                        full_text = f"{label}: {value}"
+                        content = f"{label}: {value}"
                     else:
-                        full_text = str(value)
+                        content = str(value)
                     
-                    # Apply HTML tag to entire line
-                    if html_tag == 'none':
-                        html_parts.append(full_text)
-                    elif html_tag == 'br':
-                        html_parts.append(f"{full_text}<br>")
+                    # Apply HTML tag
+                    if html_tag == 'br':
+                        html_parts.append(f"{content}<br>")
                     elif html_tag == 'li':
-                        html_parts.append(f"<li>{full_text}</li>")
+                        html_parts.append(f"<li>{content}</li>")
+                    elif html_tag == 'none':
+                        html_parts.append(content)
                     else:
-                        html_parts.append(f"<{html_tag}>{full_text}</{html_tag}>")
+                        html_parts.append(f"<{html_tag}>{content}</{html_tag}>")
         
         return "".join(html_parts)
     
