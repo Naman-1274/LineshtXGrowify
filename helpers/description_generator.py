@@ -36,7 +36,7 @@ class DescriptionGenerator:
         try:
             # Sort elements by order
             sorted_elements = sorted([elem for elem in description_elements if elem.get('column')], 
-                                key=lambda x: x.get('order', 0))
+                                   key=lambda x: x.get('order', 0))
             
             html_parts = []
             
@@ -48,24 +48,8 @@ class DescriptionGenerator:
                 if column and column in row.index:
                     value = self._clean_value_no_decimals(row[column], column)
                     if value:
-                        # Format with proper HTML structure
-                        if label and label.strip():
-                            # Label exists - apply HTML tag to label only
-                            if html_tag == 'none':
-                                # No tags - plain text label with value in <p>
-                                html_parts.append(f"{label}: <p>{value}</p>")
-                            elif html_tag == 'br':
-                                # Label with line break, value in <p>
-                                html_parts.append(f"{label}:<br><p>{value}</p>")
-                            elif html_tag == 'li':
-                                # List item - strong label, value in <p>
-                                html_parts.append(f"<li><strong>{label}:</strong> <p>{value}</p></li>")
-                            else:
-                                # Apply tag to label only (h3, h4, strong, etc.), value in <p>
-                                html_parts.append(f"<{html_tag}>{label}:</{html_tag}><p>{value}</p>")
-                        else:
-                            # No label - just value in <p>
-                            html_parts.append(f"<p>{value}</p>")
+                        formatted_content = self._format_with_proper_html_tags(label, value, html_tag)
+                        html_parts.append(formatted_content)
             
             return "".join(html_parts) if html_parts else ""
             
