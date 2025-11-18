@@ -1,4 +1,4 @@
-# backend/data_processor.py - COMPLETE FILE with default_qty fix
+# backend/data_processor.py - COMPLETE FILE with all fixes
 import pandas as pd
 import streamlit as st
 from helpers.utils import get_column_value, clean_value, sort_sizes_with_quantities
@@ -17,13 +17,13 @@ class DataProcessor:
         return df_with_handles
     
     def initialize_variants(self, df, column_mapping, config):
-        """FIXED: Initialize variant management data with dynamic default_qty from config"""
+        """FIXED: Initialize variant management with proper default_qty from config"""
         unique_variants = []
         variant_products = {}
         extracted_quantities = {}
         extracted_compare_prices = {}
         
-        # FIXED: Get current default_qty from config
+        # FIXED: Get the current default_qty from config (not session state)
         current_default_qty = config.get('default_qty', 10)
         
         for _, row in df.iterrows():
@@ -48,41 +48,38 @@ class DataProcessor:
         st.session_state.unique_variants = unique_variants
         st.session_state.variant_products = variant_products
         
-        # FIXED: Initialize quantity mappings with CURRENT default_qty from config
+        # FIXED: Initialize quantity mappings with current default_qty from config
         if 'variant_quantities' not in st.session_state:
             st.session_state.variant_quantities = {}
-            for size, color, title in unique_variants:
-                variant_key = f"{size}|{color}|{title}"
-                extracted_qty = extracted_quantities.get(variant_key, 0)
-                # Use extracted qty if > 0, otherwise use CURRENT default_qty from config
-                st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
-        else:
-            # FIXED: Update existing quantities to reflect new default_qty
-            # For variants without extracted quantity, update to new default
-            for size, color, title in unique_variants:
-                variant_key = f"{size}|{color}|{title}"
-                if variant_key in st.session_state.variant_quantities:
-                    # Check if this variant has extracted quantity
-                    extracted_qty = extracted_quantities.get(variant_key, 0)
-                    if extracted_qty == 0:
-                        # No extracted quantity, use current default from config
-                        st.session_state.variant_quantities[variant_key] = current_default_qty
-                else:
-                    # New variant, initialize with extracted or current default
-                    extracted_qty = extracted_quantities.get(variant_key, 0)
-                    st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
         
-        # Initialize compare price mappings
+        # Update all quantities - use extracted if available, otherwise use current default_qty
+        for size, color, title in unique_variants:
+            variant_key = f"{size}|{color}|{title}"
+            extracted_qty = extracted_quantities.get(variant_key, 0)
+            
+            # If variant not yet in session, initialize it
+            if variant_key not in st.session_state.variant_quantities:
+                # Use extracted quantity if > 0, otherwise use current default_qty from config
+                st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
+        
+        # FIXED: Initialize compare price mappings
         if 'variant_compare_prices' not in st.session_state:
             st.session_state.variant_compare_prices = {}
-            for size, color, title in unique_variants:
-                variant_key = f"{size}|{color}|{title}"
+        
+        for size, color, title in unique_variants:
+            variant_key = f"{size}|{color}|{title}"
+            
+            # If variant not yet in session, initialize it
+            if variant_key not in st.session_state.variant_compare_prices:
                 extracted_price = extracted_compare_prices.get(variant_key, config.get('default_compare_price', 0))
                 st.session_state.variant_compare_prices[variant_key] = extracted_price
         
         # Store extracted quantities for UI display
         st.session_state.extracted_quantities = extracted_quantities
         st.session_state.extracted_compare_prices = extracted_compare_prices
+        
+        # IMPORTANT: Store the config default_qty so UI can show it
+        st.session_state.config_default_qty = current_default_qty
     
     def generate_shopify_csv(self, df, column_mapping, config):
         """Generate final Shopify CSV with LATEST format including all metafields"""
@@ -389,13 +386,13 @@ class DataProcessor:
             # Options with Linked To fields
             "Option1 Name": "Size" if has_sizes else "",
             "Option1 Value": display_size,
-            "Option1 Linked To": "",  # NEW FIELD
+            "Option1 Linked To": "",
             "Option2 Name": "Color" if has_colors else "",
             "Option2 Value": clean_value(row.get("colours_list", "")),
-            "Option2 Linked To": "",  # NEW FIELD
+            "Option2 Linked To": "",
             "Option3 Name": "",
             "Option3 Value": "",
-            "Option3 Linked To": "",  # NEW FIELD
+            "Option3 Linked To": "",
             
             # Variant Fields
             "Variant SKU": clean_value(get_column_value(row, column_mapping, 'Variant SKU', '') or 
@@ -410,7 +407,7 @@ class DataProcessor:
             "Variant Requires Shipping": "TRUE",
             "Variant Taxable": "TRUE",
             
-            # NEW Unit Price Fields
+            # Unit Price Fields
             "Unit Price Total Measure": "",
             "Unit Price Total Measure Unit": "",
             "Unit Price Base Measure": "",
@@ -433,29 +430,27 @@ class DataProcessor:
             "Google Shopping / Gender": "",
             "Google Shopping / Age Group": "",
             "Google Shopping / MPN": "",
-            "Google Shopping / Condition": "",  # NEW FIELD
-            "Google Shopping / Custom Product": "",  # NEW FIELD
+            "Google Shopping / Condition": "",
+            "Google Shopping / Custom Product": "",
             "Google Shopping / Custom Label 0": "",
             "Google Shopping / Custom Label 1": "",
             "Google Shopping / Custom Label 2": "",
             "Google Shopping / Custom Label 3": "",
             "Google Shopping / Custom Label 4": "",
             
-            # NEW METAFIELDS - Product Attributes
+            # Metafields
             "Gender (product.metafields.custom.gender)": "",
             "Google: Custom Product (product.metafields.mm-google-shopping.custom_product)": "",
             "Age group (product.metafields.shopify.age-group)": "",
-            "Color (product.metafields.shopify.color-pattern)": "",  # Auto-populate from color
+            "Color (product.metafields.shopify.color-pattern)": color,
             "Dress occasion (product.metafields.shopify.dress-occasion)": "",
             "Dress style (product.metafields.shopify.dress-style)": "",
-            "Fabric (product.metafields.shopify.fabric)": "",  # Auto-populate from fabric mapping
+            "Fabric (product.metafields.shopify.fabric)": "",
             "Neckline (product.metafields.shopify.neckline)": "",
-            "Size (product.metafields.shopify.size)": "",  # Auto-populate from size
+            "Size (product.metafields.shopify.size)": display_size,
             "Skirt/Dress length type (product.metafields.shopify.skirt-dress-length-type)": "",
             "Sleeve length type (product.metafields.shopify.sleeve-length-type)": "",
             "Target gender (product.metafields.shopify.target-gender)": "",
-            
-            # NEW METAFIELDS - Product Recommendations
             "Complementary products (product.metafields.shopify--discovery--product_recommendation.complementary_products)": "",
             "Related products (product.metafields.shopify--discovery--product_recommendation.related_products)": "",
             "Related products settings (product.metafields.shopify--discovery--product_recommendation.related_products_display)": "",

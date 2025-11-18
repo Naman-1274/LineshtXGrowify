@@ -1,4 +1,4 @@
-# core/workflow_manager.py - Enhanced workflow management with step-based flow and description builder
+# core/workflow_manager.py - FIXED: HTML tags only on labels
 import streamlit as st
 from helpers.column_mapper import ColumnMapper
 from helpers.description_generator import DescriptionGenerator
@@ -58,10 +58,10 @@ class WorkflowManager:
             
             # Show current mapping summary for user confirmation
             if cleaned_mapping:
-                with st.expander("ðŸ“‹ Current Mapping Summary", expanded=False):
+                with st.expander("📋 Current Mapping Summary", expanded=False):
                     st.write("**Active mappings:**")
                     for shopify_field, user_column in cleaned_mapping.items():
-                        st.write(f"â€¢ **{shopify_field}** â† {user_column}")
+                        st.write(f"• **{shopify_field}** → {user_column}")
             
             # Auto-confirm mapping (user can always go back to modify)
             session.set_mapping_complete(True)
@@ -167,8 +167,8 @@ class WorkflowManager:
             data_processor.initialize_variants(processed_df, column_mapping, config)
             
             # Only show variant editor on main screen (no config options)
-            st.markdown("### ðŸ“‹ Variant Quantity & Price Editor")
-            st.info("ðŸ’¡ Use the sidebar (âš™ï¸ Configuration) to manage bulk settings, surcharges, and defaults. Edit individual variants below.")
+            st.markdown("### 📋 Variant Quantity & Price Editor")
+            st.info("💡 Use the sidebar (⚙️ Configuration) to manage bulk settings, surcharges, and defaults. Edit individual variants below.")
             
             ui.render_variant_editor(session.get_variants())
             
@@ -230,7 +230,7 @@ class WorkflowManager:
             return False
     
     def _generate_description_html(self, elements, row):
-        """Generate HTML description from elements"""
+        """FIXED: Apply HTML tags ONLY to label, each element on new line"""
         html_parts = []
         
         for element in elements:
@@ -241,23 +241,29 @@ class WorkflowManager:
             if column and column in row.index:
                 value = self._clean_value(row[column])
                 if value:
-                    # Format content
                     if label and label.strip():
-                        content = f"{label}: {value}"
+                        # FIXED: Apply HTML tag ONLY to label, then add value without tags
+                        if html_tag == 'none':
+                            html_parts.append(f"{label}: {value}")
+                        elif html_tag == 'br':
+                            html_parts.append(f"{label}: {value}<br>")
+                        elif html_tag == 'li':
+                            html_parts.append(f"<li>{label}: {value}</li>")
+                        else:
+                            # HTML tag wraps ONLY the label
+                            html_parts.append(f"<{html_tag}>{label}:</{html_tag}> {value}")
                     else:
-                        content = str(value)
-                    
-                    # Apply HTML tag
-                    if html_tag == 'br':
-                        html_parts.append(f"{content}<br>")
-                    elif html_tag == 'li':
-                        html_parts.append(f"<li>{content}</li>")
-                    elif html_tag == 'none':
-                        html_parts.append(content)
-                    else:
-                        html_parts.append(f"<{html_tag}>{content}</{html_tag}>")
+                        # No label - just value with HTML tag
+                        if html_tag == 'none':
+                            html_parts.append(value)
+                        elif html_tag == 'br':
+                            html_parts.append(f"{value}<br>")
+                        elif html_tag == 'li':
+                            html_parts.append(f"<li>{value}</li>")
+                        else:
+                            html_parts.append(f"<{html_tag}>{value}</{html_tag}>")
         
-        return "".join(html_parts)
+        return " ".join(html_parts)
     
     def _clean_value(self, value):
         """Clean value for HTML generation"""

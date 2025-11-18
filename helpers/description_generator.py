@@ -1,4 +1,4 @@
-# helpers/description_generator.py - CLEANED: Only dynamic description system
+# helpers/description_generator.py - FIXED: HTML tags only on labels
 import pandas as pd
 import streamlit as st
 
@@ -32,11 +32,11 @@ class DescriptionGenerator:
             return df
     
     def _generate_dynamic_description(self, description_elements: list, row: pd.Series) -> str:
-        """Generate description with proper HTML tag application and NO DECIMALS"""
+        """FIXED: Apply HTML tags ONLY to label, each element on new line"""
         try:
             # Sort elements by order
             sorted_elements = sorted([elem for elem in description_elements if elem.get('column')], 
-                                   key=lambda x: x.get('order', 0))
+                                key=lambda x: x.get('order', 0))
             
             html_parts = []
             
@@ -48,34 +48,32 @@ class DescriptionGenerator:
                 if column and column in row.index:
                     value = self._clean_value_no_decimals(row[column], column)
                     if value:
-                        formatted_content = self._format_with_proper_html_tags(label, value, html_tag)
-                        html_parts.append(formatted_content)
+                        if label and label.strip():
+                            # FIXED: Apply HTML tag ONLY to label, then add value without tags
+                            if html_tag == 'none':
+                                html_parts.append(f"{label}: {value}")
+                            elif html_tag == 'br':
+                                html_parts.append(f"{label}: {value}<br>")
+                            elif html_tag == 'li':
+                                html_parts.append(f"<li>{label}: {value}</li>")
+                            else:
+                                # HTML tag wraps ONLY the label
+                                html_parts.append(f"<{html_tag}>{label}:</{html_tag}> {value}")
+                        else:
+                            # No label - just value with HTML tag
+                            if html_tag == 'none':
+                                html_parts.append(value)
+                            elif html_tag == 'br':
+                                html_parts.append(f"{value}<br>")
+                            elif html_tag == 'li':
+                                html_parts.append(f"<li>{value}</li>")
+                            else:
+                                html_parts.append(f"<{html_tag}>{value}</{html_tag}>")
             
-            return "".join(html_parts) if html_parts else ""
+            return " ".join(html_parts) if html_parts else ""
             
         except Exception as e:
             return ""
-    
-    def _format_with_proper_html_tags(self, label: str, value: str, html_tag: str) -> str:
-        """Apply HTML tag only to label, keep value in <p> tag"""
-        if not label or not label.strip():
-            # No label, just return value in <p> tag
-            return f"<p>{value}</p>"
-        
-        # Apply HTML tag to label only
-        if html_tag == 'none':
-            formatted_label = label
-        elif html_tag == 'br':
-            formatted_label = f"{label}<br>"
-        elif html_tag == 'li':
-            # For list items, wrap the whole thing
-            return f"<li><strong>{label}:</strong> {value}</li>"
-        else:
-            # Apply tag to label with colon
-            formatted_label = f"<{html_tag}>{label}:</{html_tag}>"
-        
-        # Value always in <p> tag
-        return f"{formatted_label}<p>{value}</p>"
     
     def _clean_value_no_decimals(self, value, column_name: str = '') -> str:
         """FIXED: Remove decimals from ALL numeric values that should be integers"""

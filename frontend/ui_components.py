@@ -1,4 +1,4 @@
-# frontend/ui_components.py - COMPLETE FILE with all fixes
+# frontend/ui_components.py - COMPLETE FILE with all methods
 import streamlit as st
 import pandas as pd
 import time
@@ -99,85 +99,6 @@ class UIComponents:
         """Render section header"""
         st.markdown(f'<div class="step-header"><h2>{title}</h2></div>', unsafe_allow_html=True)
     
-    def render_sidebar_config(self, ai_enabled):
-        """Render sidebar configuration for final step"""
-        with st.sidebar:
-            st.markdown("## ⚙️ Configuration")
-            
-            config = st.session_state.get('config', {})
-            
-            # AI Processing mode
-            config['mode'] = st.radio(
-                "🤖 AI Processing Mode:",
-                options=[
-                    "Default template (no AI)",
-                    "Simple mode (first sentence + tags)",
-                    "Full AI mode (custom description + tags)"
-                ],
-                index=["Default template (no AI)", "Simple mode (first sentence + tags)", 
-                      "Full AI mode (custom description + tags)"].index(config.get('mode', "Default template (no AI)")),
-                disabled=not ai_enabled
-            )
-            
-            st.markdown("---")
-            
-            # Brand settings
-            config['vendor_name'] = st.text_input("Vendor Name", value=config.get('vendor_name', 'YourBrandName'))
-            
-            # Inventory settings
-            config['inventory_policy'] = st.selectbox(
-                "Inventory Policy", 
-                ["deny", "continue"],
-                index=0 if config.get('inventory_policy', 'deny') == 'deny' else 1
-            )
-            config['default_qty'] = st.number_input(
-                "Default Quantity", 
-                min_value=0, 
-                value=config.get('default_qty', 10), 
-                step=1,
-                key="sidebar_default_qty"
-            )
-            
-            config['bulk_qty_mode'] = st.checkbox("Bulk Quantity Override", value=config.get('bulk_qty_mode', False))
-            if config['bulk_qty_mode']:
-                config['bulk_qty'] = st.number_input("Bulk Quantity", min_value=0, value=config.get('bulk_qty', config['default_qty']), step=1)
-            
-            # Price settings
-            config['default_compare_price'] = st.number_input("Default Compare Price", min_value=0.0, value=config.get('default_compare_price', 0.0), step=0.01)
-            config['bulk_compare_price_mode'] = st.checkbox("Bulk Compare Price", value=config.get('bulk_compare_price_mode', False))
-            if config['bulk_compare_price_mode']:
-                config['bulk_compare_price'] = st.number_input("Bulk Compare Price", min_value=0.0, value=config.get('bulk_compare_price', 0.0), step=0.01)
-            
-            # Size surcharge
-            config['enable_surcharge'] = st.checkbox("Enable Size Surcharge", value=config.get('enable_surcharge', False))
-            config['surcharge_rules'] = config.get('surcharge_rules', {})
-            if config['enable_surcharge']:
-                num_rules = st.number_input("Number of surcharge rules", min_value=1, value=max(1, len(config['surcharge_rules'])), step=1)
-                new_rules = {}
-                for i in range(int(num_rules)):
-                    col1, col2 = st.columns([2, 1])
-                    with col1:
-                        existing_sizes = list(config['surcharge_rules'].keys())
-                        default_size = existing_sizes[i] if i < len(existing_sizes) else ""
-                        size = st.text_input(f"Size {i+1}", value=default_size, key=f"size_{i}").upper().strip()
-                    with col2:
-                        default_percent = config['surcharge_rules'].get(existing_sizes[i], 0) * 100 if i < len(existing_sizes) else 0
-                        percent = st.number_input(f"%", min_value=0.0, value=float(default_percent), step=0.5, key=f"percent_{i}")
-                    if size and percent > 0:
-                        new_rules[size] = percent / 100.0
-                config['surcharge_rules'] = new_rules
-            
-            # Reset controls
-            st.markdown("---")
-            if st.button("🆕 Process New File"):
-                st.session_state.clear()
-                st.rerun()
-            
-            # Save config back to session
-            st.session_state.config = config
-            
-            return config
-    
     def render_file_upload(self):
         """Enhanced file upload section with metrics"""
         st.header("📂 Step 1: Upload Your Product Data")
@@ -218,6 +139,119 @@ class UIComponents:
         # Enhanced preview
         st.subheader("Data Preview")
         st.dataframe(df.head(), use_container_width=True)
+    
+    def render_sidebar_config(self, ai_enabled):
+        """FIXED: Render sidebar configuration with proper default_qty updates"""
+        with st.sidebar:
+            st.markdown("## ⚙️ Configuration")
+            
+            config = st.session_state.get('config', {})
+            
+            # AI Processing mode
+            config['mode'] = st.radio(
+                "🤖 AI Processing Mode:",
+                options=[
+                    "Default template (no AI)",
+                    "Simple mode (first sentence + tags)",
+                    "Full AI mode (custom description + tags)"
+                ],
+                index=["Default template (no AI)", "Simple mode (first sentence + tags)", 
+                      "Full AI mode (custom description + tags)"].index(config.get('mode', "Default template (no AI)")),
+                disabled=not ai_enabled
+            )
+            
+            st.markdown("---")
+            
+            # Brand settings
+            config['vendor_name'] = st.text_input("Vendor Name", value=config.get('vendor_name', 'YourBrandName'))
+            
+            # Inventory settings
+            config['inventory_policy'] = st.selectbox(
+                "Inventory Policy", 
+                ["deny", "continue"],
+                index=0 if config.get('inventory_policy', 'deny') == 'deny' else 1
+            )
+            
+            # FIXED: Default Quantity with auto-update functionality
+            st.markdown("### 📦 Default Quantity")
+            old_default_qty = config.get('default_qty', 10)
+            new_default_qty = st.number_input(
+                "Default Quantity for New Variants", 
+                min_value=0, 
+                value=old_default_qty, 
+                step=1,
+                help="This will be used for variants without extracted quantities",
+                key="default_qty_input"
+            )
+            
+            # FIXED: Apply button to update all variants
+            if new_default_qty != old_default_qty:
+                if st.button("🔄 Apply New Default to All Variants", type="primary"):
+                    config['default_qty'] = new_default_qty
+                    
+                    # Update all variants that have 0 or old default value
+                    if 'variant_quantities' in st.session_state:
+                        updated_count = 0
+                        for variant_key, current_qty in list(st.session_state.variant_quantities.items()):
+                            # Update if quantity is 0 or equals the old default
+                            if current_qty == 0 or current_qty == old_default_qty:
+                                st.session_state.variant_quantities[variant_key] = new_default_qty
+                                updated_count += 1
+                        
+                        st.success(f"✅ Updated {updated_count} variants to {new_default_qty}")
+                        st.session_state.config = config
+                        st.rerun()
+                    else:
+                        config['default_qty'] = new_default_qty
+                        st.session_state.config = config
+                        st.success(f"✅ Default quantity set to {new_default_qty}")
+                        st.rerun()
+                
+                st.warning(f"⚠️ Click button above to apply new default ({new_default_qty})")
+            else:
+                config['default_qty'] = new_default_qty
+            
+            config['bulk_qty_mode'] = st.checkbox("Bulk Quantity Override", value=config.get('bulk_qty_mode', False))
+            if config['bulk_qty_mode']:
+                config['bulk_qty'] = st.number_input("Bulk Quantity", min_value=0, value=config.get('bulk_qty', config['default_qty']), step=1)
+            
+            # Price settings
+            st.markdown("### 💰 Pricing")
+            config['default_compare_price'] = st.number_input("Default Compare Price", min_value=0.0, value=config.get('default_compare_price', 0.0), step=0.01)
+            config['bulk_compare_price_mode'] = st.checkbox("Bulk Compare Price", value=config.get('bulk_compare_price_mode', False))
+            if config['bulk_compare_price_mode']:
+                config['bulk_compare_price'] = st.number_input("Bulk Compare Price", min_value=0.0, value=config.get('bulk_compare_price', 0.0), step=0.01)
+            
+            # Size surcharge
+            st.markdown("### 📏 Size Surcharges")
+            config['enable_surcharge'] = st.checkbox("Enable Size Surcharge", value=config.get('enable_surcharge', False))
+            config['surcharge_rules'] = config.get('surcharge_rules', {})
+            if config['enable_surcharge']:
+                num_rules = st.number_input("Number of surcharge rules", min_value=1, value=max(1, len(config['surcharge_rules'])), step=1)
+                new_rules = {}
+                for i in range(int(num_rules)):
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        existing_sizes = list(config['surcharge_rules'].keys())
+                        default_size = existing_sizes[i] if i < len(existing_sizes) else ""
+                        size = st.text_input(f"Size {i+1}", value=default_size, key=f"size_{i}").upper().strip()
+                    with col2:
+                        default_percent = config['surcharge_rules'].get(existing_sizes[i], 0) * 100 if i < len(existing_sizes) else 0
+                        percent = st.number_input(f"%", min_value=0.0, value=float(default_percent), step=0.5, key=f"percent_{i}")
+                    if size and percent > 0:
+                        new_rules[size] = percent / 100.0
+                config['surcharge_rules'] = new_rules
+            
+            # Reset controls
+            st.markdown("---")
+            if st.button("🆕 Process New File"):
+                st.session_state.clear()
+                st.rerun()
+            
+            # Update session state config
+            st.session_state.config = config
+            
+            return config
     
     def render_enhanced_column_mapping(self, df, mapping_result):
         """Enhanced column mapping with complete Shopify fields including metafields"""
@@ -465,7 +499,7 @@ class UIComponents:
                     st.caption("")
     
     def render_description_builder(self, df, column_mapping):
-        """FIXED: Dynamic description builder with inline HTML preview"""
+        """FIXED: Dynamic description builder with HTML tags only on labels"""
         st.header("📝 Step 3: Build Product Descriptions")
         
         st.info("🎨 Create dynamic product descriptions by selecting columns and customizing their display format.")
@@ -581,7 +615,7 @@ class UIComponents:
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
-        # FIXED: Live Preview - label and value on SAME LINE
+        # FIXED: Live Preview - HTML tags only on labels
         if description_elements:
             st.subheader("Live Preview")
             
@@ -592,7 +626,7 @@ class UIComponents:
             # Generate preview
             if len(df) > 0 and sorted_elements:
                 sample_row = df.iloc[0]
-                preview_html = self._generate_description_html_inline(sorted_elements, sample_row)
+                preview_html = self._generate_description_html_label_only(sorted_elements, sample_row)
                 
                 st.markdown("**HTML Output:**")
                 st.markdown(f'<div class="preview-box">{preview_html}</div>', unsafe_allow_html=True)
@@ -602,11 +636,11 @@ class UIComponents:
         
         return description_elements
     
-    def _generate_description_html_inline(self, elements, row):
-        """FIXED: Generate HTML with label and value on SAME LINE"""
+    def _generate_description_html_label_only(self, elements, row):
+        """FIXED: Generate HTML with tags ONLY on labels, each element on new line"""
         html_parts = []
         
-        for element in elements:
+        for i, element in enumerate(elements):
             column = element.get('column', '')
             label = element.get('label', '')
             html_tag = element.get('html_tag', 'p')
@@ -614,23 +648,30 @@ class UIComponents:
             if column and column in row.index:
                 value = self._clean_value_no_decimals(row[column], column)
                 if value:
-                    # FIXED: Format with label and value on same line
                     if label and label.strip():
-                        # Combine label and value in ONE line
-                        full_text = f"{label}: {value}"
+                        # FIXED: Apply HTML tag ONLY to label, value on same line
+                        if html_tag == 'none':
+                            # No HTML tag - just text with line break
+                            html_parts.append(f"{label}: {value}<br>")
+                        elif html_tag == 'br':
+                            html_parts.append(f"{label}: {value}<br>")
+                        elif html_tag == 'li':
+                            html_parts.append(f"<li>{label}: {value}</li>")
+                        else:
+                            # Wrap label in tag, value plain, then add <br> for new line
+                            html_parts.append(f"<{html_tag}>{label}:</{html_tag}> {value}<br>")
                     else:
-                        full_text = str(value)
-                    
-                    # Apply HTML tag to the ENTIRE line
-                    if html_tag == 'none':
-                        html_parts.append(full_text)
-                    elif html_tag == 'br':
-                        html_parts.append(f"{full_text}<br>")
-                    elif html_tag == 'li':
-                        html_parts.append(f"<li>{full_text}</li>")
-                    else:
-                        html_parts.append(f"<{html_tag}>{full_text}</{html_tag}>")
+                        # No label - just value with HTML tag
+                        if html_tag == 'none':
+                            html_parts.append(f"{value}<br>")
+                        elif html_tag == 'br':
+                            html_parts.append(f"{value}<br>")
+                        elif html_tag == 'li':
+                            html_parts.append(f"<li>{value}</li>")
+                        else:
+                            html_parts.append(f"<{html_tag}>{value}</{html_tag}><br>")
         
+        # Join directly - each element already has line breaks
         return "".join(html_parts)
     
     def _clean_value_no_decimals(self, value, column_name: str = '') -> str:
@@ -667,188 +708,6 @@ class UIComponents:
             return ""
         return str(value).strip()
     
-    def render_column_mapping_review(self, df, mapping_result):
-        """Render the column mapping review interface (legacy support)"""
-        st.markdown("### 📊 Automatic Column Detection Results")
-        
-        # Show mapping summary
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("✅ Auto-Mapped", len(mapping_result.base_mapping))
-        with col2:
-            st.metric("❓ Unmapped", len(mapping_result.unmapped_columns))
-        with col3:
-            st.metric("📊 Total Columns", len(df.columns))
-        
-        # Show automatically mapped columns
-        if mapping_result.base_mapping:
-            st.markdown("#### ✅ Successfully Mapped Columns")
-            mapped_data = []
-            for standard_name, actual_column in mapping_result.base_mapping.items():
-                confidence = mapping_result.confidence_scores.get(actual_column, 1.0)
-                confidence_label = self._get_confidence_label(confidence)
-                mapped_data.append({
-                    "Standard Field": standard_name,
-                    "Your Column": actual_column,
-                    "Confidence": f"{confidence:.1%}",
-                    "Status": confidence_label
-                })
-            
-            st.dataframe(pd.DataFrame(mapped_data), hide_index=True, use_container_width=True)
-        
-        # Handle unmapped columns
-        enhanced_mapping = {}
-        column_descriptions = {}
-        
-        if mapping_result.unmapped_columns:
-            st.markdown("#### ❓ Unmapped Columns")
-            enhanced_mapping, column_descriptions = self._render_column_assignment_interface(
-                df, mapping_result.unmapped_columns, mapping_result.base_mapping
-            )
-        
-        return enhanced_mapping, column_descriptions
-    
-    def _render_column_assignment_interface(self, df, unmapped_columns, existing_mapping):
-        """Render interface for assigning unmapped columns"""
-        st.info("Choose how to handle each unmapped column:")
-        
-        # Initialize session state
-        if 'column_assignments' not in st.session_state:
-            st.session_state.column_assignments = {}
-        if 'enhanced_column_mapping' not in st.session_state:
-            st.session_state.enhanced_column_mapping = {}
-        if 'column_descriptions' not in st.session_state:
-            st.session_state.column_descriptions = {}
-        if 'column_html_tags' not in st.session_state:
-            st.session_state.column_html_tags = {}
-        
-        assignment_options = {
-            'ignore': '🚫 Ignore',
-            'description': '📝 Add to Description',
-            'both': '🔄 Map to Field AND Description',
-            'field_only': '🗂️ Map to Standard Field',
-            'custom_field': '📋 Add as Custom Field'
-        }
-        
-        taken_fields = set(existing_mapping.keys())
-        
-        for col in unmapped_columns:
-            st.markdown(f"#### 📋 Column: `{col}`")
-            
-            # Show sample data
-            sample_data = df[col].dropna().head(3).tolist()
-            if sample_data:
-                st.caption(f"Sample: {', '.join(str(x) for x in sample_data)}")
-            
-            col1, col2 = st.columns([1, 2])
-            
-            with col1:
-                assignment = st.selectbox(
-                    "Action:",
-                    options=list(assignment_options.keys()),
-                    format_func=lambda x: assignment_options[x],
-                    key=f"assign_{col}",
-                    index=list(assignment_options.keys()).index(
-                        st.session_state.column_assignments.get(col, 'ignore')
-                    )
-                )
-                st.session_state.column_assignments[col] = assignment
-            
-            with col2:
-                self._render_assignment_options(col, assignment, taken_fields, existing_mapping)
-        
-        return st.session_state.enhanced_column_mapping.copy(), st.session_state.column_descriptions.copy()
-    
-    def _render_assignment_options(self, col, assignment, taken_fields, existing_mapping):
-        """Render options based on assignment type"""
-        if assignment in ['both', 'field_only']:
-            available_fields = self._get_available_standard_fields(taken_fields, existing_mapping)
-            if available_fields:
-                mapped_field = st.selectbox(
-                    "Map to field:",
-                    options=[''] + available_fields,
-                    key=f"field_{col}"
-                )
-                if mapped_field:
-                    st.session_state.enhanced_column_mapping[mapped_field] = col
-                    taken_fields.add(mapped_field)
-        
-        elif assignment == 'custom_field':
-            st.info(f"✅ '{col}' will be added as custom field")
-            st.session_state.enhanced_column_mapping[col] = col
-        
-        if assignment in ['both', 'description']:
-            self._render_description_options(col)
-    
-    def _render_description_options(self, col):
-        """Render description options with HTML tags"""
-        col1, col2 = st.columns([1, 1])
-        
-        with col1:
-            desc_label = st.text_input(
-                "Description label:",
-                value=st.session_state.column_descriptions.get(col, col),
-                key=f"desc_{col}"
-            )
-            st.session_state.column_descriptions[col] = desc_label
-        
-        with col2:
-            html_tags = {
-                'p': 'Paragraph <p>',
-                'h3': 'Heading <h3>',
-                'h4': 'Heading <h4>',
-                'strong': 'Bold <strong>',
-                'em': 'Italic <em>',
-                'li': 'List item <li>',
-                'div': 'Division <div>',
-                'br': 'Line break <br>',
-                'none': 'No HTML tags'
-            }
-            
-            selected_tag = st.selectbox(
-                "HTML tag:",
-                options=list(html_tags.keys()),
-                format_func=lambda x: html_tags[x],
-                key=f"html_{col}",
-                index=list(html_tags.keys()).index(
-                    st.session_state.column_html_tags.get(col, 'p')
-                )
-            )
-            st.session_state.column_html_tags[col] = selected_tag
-        
-        # Preview
-        if desc_label:
-            preview = self._generate_html_preview(desc_label, "Sample content", selected_tag)
-            st.markdown("**Preview:**")
-            st.markdown(f'<div style="background:#f8f9fa;padding:0.5rem;border-radius:4px;">{preview}</div>', unsafe_allow_html=True)
-    
-    def _generate_html_preview(self, label, content, tag):
-        """Generate HTML preview"""
-        full_content = f"{label}: {content}" if label != content else content
-        if tag == 'none':
-            return full_content
-        elif tag == 'br':
-            return f"{full_content}<br>"
-        else:
-            return f"<{tag}>{full_content}</{tag}>"
-    
-    def _get_confidence_label(self, confidence):
-        """Get confidence label with styling"""
-        if confidence >= 0.9:
-            return "🟢 High"
-        elif confidence >= 0.7:
-            return "🟡 Medium"
-        else:
-            return "🔴 Low"
-    
-    def _get_available_standard_fields(self, taken_fields, existing_mapping):
-        """Get available standard fields for mapping"""
-        all_fields = [
-            "Handle", "Title", "Vendor", "Product Category", "Type", "Tags",
-            "Variant SKU", "Variant Price", "Variant Compare At Price"
-        ]
-        return [field for field in all_fields if field not in taken_fields and field not in existing_mapping]
-    
     def show_data_preview(self, df, column_mapping):
         """Show data preview"""
         tab1, tab2 = st.tabs(["📊 Data Preview", "📋 Column Analysis"])
@@ -864,9 +723,6 @@ class UIComponents:
                 'Sample': [str(df[col].iloc[0]) if len(df) > 0 else 'N/A' for col in df.columns]
             })
             st.dataframe(col_analysis, use_container_width=True)
-    
-    def render_inventory_management(self, config):
-        pass
     
     def render_variant_editor(self, variants_data):
         """Render variant quantity/price editor with extracted quantities displayed"""
@@ -1015,3 +871,12 @@ class UIComponents:
             """)
         
         return True
+    
+    def _get_confidence_label(self, confidence):
+        """Get confidence label with styling"""
+        if confidence >= 0.9:
+            return "🟢 High"
+        elif confidence >= 0.7:
+            return "🟡 Medium"
+        else:
+            return "🔴 Low"
