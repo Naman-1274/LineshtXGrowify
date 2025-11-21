@@ -1,4 +1,4 @@
-# backend/data_processor.py - COMPLETE FILE with all fixes
+# backend/data_processor.py - FIXED: Blank compare price handling + paragraph tag fix
 import pandas as pd
 import streamlit as st
 from helpers.utils import get_column_value, clean_value, sort_sizes_with_quantities
@@ -33,7 +33,9 @@ class DataProcessor:
             
             # Extract quantity from size (e.g., "M-5" means 5 quantity)
             extracted_qty = row.get('extracted_quantity', 0)
-            extracted_compare_price = row.get('uploaded_compare_price', config.get('default_compare_price', 0))
+            
+            # FIXED: Handle blank compare prices properly
+            extracted_compare_price = row.get('uploaded_compare_price', None)
             
             variant_key = (size, color, title)
             variant_key_str = f"{size}|{color}|{title}"
@@ -42,7 +44,8 @@ class DataProcessor:
                 unique_variants.append(variant_key)
                 variant_products[variant_key] = title
                 extracted_quantities[variant_key_str] = extracted_qty
-                extracted_compare_prices[variant_key_str] = row.get('uploaded_compare_price', config.get('default_compare_price', 0))
+                # FIXED: Store None if no compare price (not default)
+                extracted_compare_prices[variant_key_str] = extracted_compare_price
         
         # Store in session state
         st.session_state.unique_variants = unique_variants
@@ -62,7 +65,7 @@ class DataProcessor:
                 # Use extracted quantity if > 0, otherwise use current default_qty from config
                 st.session_state.variant_quantities[variant_key] = extracted_qty if extracted_qty > 0 else current_default_qty
         
-        # FIXED: Initialize compare price mappings
+        # FIXED: Initialize compare price mappings - keep blank if source is blank
         if 'variant_compare_prices' not in st.session_state:
             st.session_state.variant_compare_prices = {}
         
@@ -71,7 +74,8 @@ class DataProcessor:
             
             # If variant not yet in session, initialize it
             if variant_key not in st.session_state.variant_compare_prices:
-                extracted_price = extracted_compare_prices.get(variant_key, config.get('default_compare_price', 0))
+                extracted_price = extracted_compare_prices.get(variant_key, None)
+                # FIXED: Store None if blank, not default value
                 st.session_state.variant_compare_prices[variant_key] = extracted_price
         
         # Store extracted quantities for UI display
@@ -112,11 +116,14 @@ class DataProcessor:
         # Reorder columns to match exact Shopify format
         shopify_df = self._reorder_columns_to_shopify_format(shopify_df)
         
-        # Clean up data
+        # FIXED: Clean up data - keep blank compare prices as blank
         for col in shopify_df.columns:
             if shopify_df[col].dtype == 'object':
                 shopify_df[col] = shopify_df[col].fillna('').astype(str)
                 shopify_df[col] = shopify_df[col].replace(['nan', 'NaN', 'None'], '')
+            elif col == "Variant Compare At Price":
+                # FIXED: Keep None/NaN as empty string for compare price
+                shopify_df[col] = shopify_df[col].apply(lambda x: '' if pd.isna(x) or x == 0 else x)
             else:
                 shopify_df[col] = shopify_df[col].fillna(0)
         
@@ -173,7 +180,6 @@ class DataProcessor:
     def _process_variants(self, df_raw, column_mapping, config):
         """Process variants and extract inventory data with enhanced configuration support"""
         df_exploded_list = []
-        default_compare_price = config.get('default_compare_price', 0)
         
         for _, row in df_raw.iterrows():
             # Use both old and new field names for compatibility
@@ -185,7 +191,7 @@ class DataProcessor:
             sorted_sizes, size_quantity_map = sort_sizes_with_quantities(clean_value(sizes_value))
             colors = [c.strip() for c in str(clean_value(colours_value)).split(",") if c.strip()]
             
-            # Extract compare price based on configuration
+            # FIXED: Extract compare price - handle blank properly
             uploaded_compare_price = self._extract_compare_price(row, column_mapping, config)
             
             # Create default entries if no sizes or colors
@@ -209,6 +215,8 @@ class DataProcessor:
                     # Extract quantity based on configuration
                     extracted_qty = self._extract_quantity(size, size_quantity_map, config)
                     new_row["extracted_quantity"] = extracted_qty
+                    
+                    # FIXED: Store None for blank compare prices
                     new_row["uploaded_compare_price"] = uploaded_compare_price
                     
                     df_exploded_list.append(new_row)
@@ -230,14 +238,15 @@ class DataProcessor:
         return config.get('default_qty', 10)
     
     def _extract_compare_price(self, row, column_mapping, config):
-        """Extract compare price based on configuration settings"""
+        """FIXED: Extract compare price - return None for blank values"""
         if config.get('bulk_compare_price_mode', False):
             return config.get('bulk_compare_price', 0.0)
         
         if config.get('use_expected_compare_price', True):
             compare_price_value = get_column_value(row, column_mapping, 'Variant Compare At Price')
             
-            if compare_price_value and pd.notna(compare_price_value):
+            # FIXED: Check if value exists and is not blank
+            if compare_price_value and pd.notna(compare_price_value) and str(compare_price_value).strip() != '':
                 try:
                     numeric_value = float(str(compare_price_value).strip())
                     if numeric_value >= 0:
@@ -245,7 +254,8 @@ class DataProcessor:
                 except (ValueError, TypeError):
                     pass
             
-            return config.get('fallback_compare_price', config.get('default_compare_price', 0.0))
+            # FIXED: Return None for blank, not default
+            return None
         
         return config.get('default_compare_price', 0.0)
     
@@ -314,21 +324,26 @@ class DataProcessor:
                 lambda row: row.get('extracted_quantity', config.get('default_qty', 10)), axis=1
             )
         
-        # Apply compare price based on configuration
+        # FIXED: Apply compare price - keep None for blank values
         if config.get('bulk_compare_price_mode', False):
             bulk_compare_price = config.get('bulk_compare_price', 0.0)
             df["Variant Compare At Price"] = bulk_compare_price
         elif 'variant_compare_prices' in st.session_state:
             def get_compare_price(variant_key):
-                return st.session_state.variant_compare_prices.get(variant_key, config.get('default_compare_price', 0.0))
+                price = st.session_state.variant_compare_prices.get(variant_key, None)
+                # FIXED: Return None if blank, not default
+                return price
             df["Variant Compare At Price"] = df["_variant_key"].apply(get_compare_price)
         else:
             df["Variant Compare At Price"] = df.apply(
-                lambda row: row.get('uploaded_compare_price', config.get('default_compare_price', 0.0)), axis=1
+                lambda row: row.get('uploaded_compare_price', None), axis=1
             )
         
         df["Variant Inventory Qty"] = pd.to_numeric(df["Variant Inventory Qty"], errors='coerce').fillna(0).astype(int)
-        df["Variant Compare At Price"] = pd.to_numeric(df["Variant Compare At Price"], errors='coerce').fillna(0).astype(float)
+        # FIXED: Keep None values as None for compare price
+        df["Variant Compare At Price"] = df["Variant Compare At Price"].apply(
+            lambda x: None if pd.isna(x) or x == '' else float(x) if x != 0 else None
+        )
     
     def _sort_variants_in_group(self, group):
         """Sort variants within product group"""
@@ -368,9 +383,12 @@ class DataProcessor:
         variant_price = row.get('final_variant_price', get_column_value(row, column_mapping, 'Variant Price', 0))
         variant_price = clean_value(variant_price, is_numeric=True)
         
-        # Extract metafield data from row
-        fabric = clean_value(get_column_value(row, column_mapping, 'fabric', ''))
-        color = clean_value(row.get("colours_list", ""))
+        # FIXED: Handle blank compare prices
+        compare_price = row.get("Variant Compare At Price", None)
+        if pd.isna(compare_price) or compare_price == '' or compare_price == 0:
+            compare_price = ''
+        else:
+            compare_price = clean_value(compare_price, is_numeric=True)
         
         return {
             # Core Product Fields
@@ -403,7 +421,7 @@ class DataProcessor:
             "Variant Inventory Policy": config.get('inventory_policy', 'deny'),
             "Variant Fulfillment Service": "manual",
             "Variant Price": variant_price,
-            "Variant Compare At Price": clean_value(row.get("Variant Compare At Price", 0), is_numeric=True),
+            "Variant Compare At Price": compare_price,  # FIXED: Blank if no value
             "Variant Requires Shipping": "TRUE",
             "Variant Taxable": "TRUE",
             
@@ -442,12 +460,12 @@ class DataProcessor:
             "Gender (product.metafields.custom.gender)": "",
             "Google: Custom Product (product.metafields.mm-google-shopping.custom_product)": "",
             "Age group (product.metafields.shopify.age-group)": "",
-            "Color (product.metafields.shopify.color-pattern)": color,
+            "Color (product.metafields.shopify.color-pattern)": "",
             "Dress occasion (product.metafields.shopify.dress-occasion)": "",
             "Dress style (product.metafields.shopify.dress-style)": "",
             "Fabric (product.metafields.shopify.fabric)": "",
             "Neckline (product.metafields.shopify.neckline)": "",
-            "Size (product.metafields.shopify.size)": display_size,
+            "Size (product.metafields.shopify.size)": "",
             "Skirt/Dress length type (product.metafields.shopify.skirt-dress-length-type)": "",
             "Sleeve length type (product.metafields.shopify.sleeve-length-type)": "",
             "Target gender (product.metafields.shopify.target-gender)": "",
@@ -469,6 +487,13 @@ class DataProcessor:
         display_size = clean_value(row.get("display_size", ""))
         variant_price = row.get('final_variant_price', get_column_value(row, column_mapping, 'Variant Price', 0))
         variant_price = clean_value(variant_price, is_numeric=True)
+        
+        # FIXED: Handle blank compare prices
+        compare_price = row.get("Variant Compare At Price", None)
+        if pd.isna(compare_price) or compare_price == '' or compare_price == 0:
+            compare_price = ''
+        else:
+            compare_price = clean_value(compare_price, is_numeric=True)
         
         return {
             "Handle": clean_value(handle),
@@ -495,7 +520,7 @@ class DataProcessor:
             "Variant Inventory Policy": config.get('inventory_policy', 'deny'),
             "Variant Fulfillment Service": "manual",
             "Variant Price": variant_price,
-            "Variant Compare At Price": clean_value(row.get("Variant Compare At Price", 0), is_numeric=True),
+            "Variant Compare At Price": compare_price,  # FIXED: Blank if no value
             "Variant Requires Shipping": "TRUE",
             "Variant Taxable": "TRUE",
             "Unit Price Total Measure": "",

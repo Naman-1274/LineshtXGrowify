@@ -1,4 +1,4 @@
-# core/workflow_manager.py - FIXED: HTML tags only on labels
+# core/workflow_manager.py - FIXED: Paragraph tag wraps entire content
 import streamlit as st
 from helpers.column_mapper import ColumnMapper
 from helpers.description_generator import DescriptionGenerator
@@ -230,7 +230,7 @@ class WorkflowManager:
             return False
     
     def _generate_description_html(self, elements, row):
-        """FIXED: Apply HTML tags ONLY to label, each element on new line"""
+        """FIXED: Wrap entire content in paragraph tag, apply user tags to labels only"""
         html_parts = []
         
         for element in elements:
@@ -242,26 +242,34 @@ class WorkflowManager:
                 value = self._clean_value(row[column])
                 if value:
                     if label and label.strip():
-                        # FIXED: Apply HTML tag ONLY to label, then add value without tags
+                        # FIXED: Apply user tag to label, add value after
                         if html_tag == 'none':
+                            # No tag - just label and value
                             html_parts.append(f"{label}: {value}")
                         elif html_tag == 'br':
+                            # Line break after
                             html_parts.append(f"{label}: {value}<br>")
                         elif html_tag == 'li':
+                            # List item wraps everything
                             html_parts.append(f"<li>{label}: {value}</li>")
+                        elif html_tag == 'p':
+                            # FIXED: Paragraph wraps the entire label+value together
+                            html_parts.append(f"<p>{label}: {value}</p>")
                         else:
-                            # HTML tag wraps ONLY the label
-                            html_parts.append(f"<{html_tag}>{label}:</{html_tag}> {value}")
+                            # Other tags wrap label only, value follows
+                            html_parts.append(f"<p><{html_tag}>{label} : </{html_tag}> {value}</p>")
                     else:
-                        # No label - just value with HTML tag
+                        # No label - just value with tag
                         if html_tag == 'none':
                             html_parts.append(value)
                         elif html_tag == 'br':
                             html_parts.append(f"{value}<br>")
                         elif html_tag == 'li':
                             html_parts.append(f"<li>{value}</li>")
+                        elif html_tag == 'p':
+                            html_parts.append(f"<p>{value}</p>")
                         else:
-                            html_parts.append(f"<{html_tag}>{value}</{html_tag}>")
+                            html_parts.append(f"<p><{html_tag}>{value}</{html_tag}></p>")
         
         return " ".join(html_parts)
     

@@ -58,7 +58,7 @@ class DescriptionGenerator:
                                 html_parts.append(f"<li>{label}: {value}</li>")
                             else:
                                 # HTML tag wraps ONLY the label
-                                html_parts.append(f"<{html_tag}>{label}:</{html_tag}> {value}")
+                                html_parts.append(f"<p><{html_tag}>{label} : </{html_tag}> {value}</p>")
                         else:
                             # No label - just value with HTML tag
                             if html_tag == 'none':
@@ -68,7 +68,7 @@ class DescriptionGenerator:
                             elif html_tag == 'li':
                                 html_parts.append(f"<li>{value}</li>")
                             else:
-                                html_parts.append(f"<{html_tag}>{value}</{html_tag}>")
+                                html_parts.append(f"<p><{html_tag}>{value}</{html_tag}></p>")
             
             return " ".join(html_parts) if html_parts else ""
             

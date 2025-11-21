@@ -499,8 +499,8 @@ class UIComponents:
                     st.caption("")
     
     def render_description_builder(self, df, column_mapping):
-        """FIXED: Dynamic description builder with HTML tags only on labels"""
-        st.header("📝 Step 3: Build Product Descriptions")
+        """FIXED: Dynamic description builder with correct paragraph preview"""
+        st.header("🖋 Step 3: Build Product Descriptions")
         
         st.info("🎨 Create dynamic product descriptions by selecting columns and customizing their display format.")
         
@@ -556,10 +556,10 @@ class UIComponents:
         
         # Configure elements
         html_tags = {
-            'p': 'Paragraph',
-            'h3': 'Heading 3',
-            'h4': 'Heading 4',
-            'strong': 'Bold',
+            'p': 'Paragraph (wraps label + value)',
+            'h3': 'Heading 3 (label only)',
+            'h4': 'Heading 4 (label only)',
+            'strong': 'Bold (label only)',
             'li': 'List Item',
             'div': 'Division',
             'br': 'Line Break',
@@ -615,7 +615,7 @@ class UIComponents:
                 
                 st.markdown('</div>', unsafe_allow_html=True)
         
-        # FIXED: Live Preview - HTML tags only on labels
+        # FIXED: Live Preview with correct paragraph formatting
         if description_elements:
             st.subheader("Live Preview")
             
@@ -626,7 +626,7 @@ class UIComponents:
             # Generate preview
             if len(df) > 0 and sorted_elements:
                 sample_row = df.iloc[0]
-                preview_html = self._generate_description_html_label_only(sorted_elements, sample_row)
+                preview_html = self._generate_description_preview(sorted_elements, sample_row)
                 
                 st.markdown("**HTML Output:**")
                 st.markdown(f'<div class="preview-box">{preview_html}</div>', unsafe_allow_html=True)
@@ -636,11 +636,11 @@ class UIComponents:
         
         return description_elements
     
-    def _generate_description_html_label_only(self, elements, row):
-        """FIXED: Generate HTML with tags ONLY on labels, each element on new line"""
+    def _generate_description_preview(self, elements, row):
+        """FIXED: Generate preview with correct paragraph formatting"""
         html_parts = []
         
-        for i, element in enumerate(elements):
+        for element in elements:
             column = element.get('column', '')
             label = element.get('label', '')
             html_tag = element.get('html_tag', 'p')
@@ -649,37 +649,38 @@ class UIComponents:
                 value = self._clean_value_no_decimals(row[column], column)
                 if value:
                     if label and label.strip():
-                        # FIXED: Apply HTML tag ONLY to label, value on same line
                         if html_tag == 'none':
-                            # No HTML tag - just text with line break
-                            html_parts.append(f"{label}: {value}<br>")
+                            html_parts.append(f"{label}: {value}")
                         elif html_tag == 'br':
                             html_parts.append(f"{label}: {value}<br>")
                         elif html_tag == 'li':
                             html_parts.append(f"<li>{label}: {value}</li>")
+                        elif html_tag == 'p':
+                            # FIXED: Paragraph wraps entire content
+                            html_parts.append(f"<p>{label}: {value}</p>")
                         else:
-                            # Wrap label in tag, value plain, then add <br> for new line
-                            html_parts.append(f"<{html_tag}>{label}:</{html_tag}> {value}<br>")
+                            # Other tags wrap label only
+                            html_parts.append(f"<p> <{html_tag}>{label} : </{html_tag}> {value}</p>")
                     else:
-                        # No label - just value with HTML tag
                         if html_tag == 'none':
-                            html_parts.append(f"{value}<br>")
+                            html_parts.append(value)
                         elif html_tag == 'br':
                             html_parts.append(f"{value}<br>")
                         elif html_tag == 'li':
                             html_parts.append(f"<li>{value}</li>")
+                        elif html_tag == 'p':
+                            html_parts.append(f"<p>{value}</p>")
                         else:
-                            html_parts.append(f"<{html_tag}>{value}</{html_tag}><br>")
+                            html_parts.append(f"<p><{html_tag}>{value}</{html_tag}></p>")
         
-        # Join directly - each element already has line breaks
-        return "".join(html_parts)
+        return " ".join(html_parts)
     
     def _clean_value_no_decimals(self, value, column_name: str = '') -> str:
-        """FIXED: Remove decimals from ALL numeric values that should be integers"""
+        """Remove decimals from integer fields"""
+        import pandas as pd
         if pd.isna(value) or str(value).strip() == '':
             return ""
         
-        # Fields that should ALWAYS be integers (no decimals)
         integer_fields = [
             'no of components', 'components', 'number_of_components', 
             'component_count', 'quantity', 'qty', 'count', 'pieces',
@@ -689,17 +690,13 @@ class UIComponents:
         column_lower = column_name.lower() if column_name else ''
         should_be_integer = any(field in column_lower for field in integer_fields)
         
-        # Try to convert to number and remove decimal if needed
         try:
             num_value = float(str(value).strip())
-            # If it's a whole number OR should be integer field, remove decimal
             if should_be_integer or num_value == int(num_value):
                 return str(int(num_value))
             else:
-                # Keep as is for actual decimal values (like prices)
                 return str(value).strip()
         except (ValueError, TypeError):
-            # Not a number, return as string
             return str(value).strip()
     
     def _clean_value(self, value):
@@ -725,7 +722,7 @@ class UIComponents:
             st.dataframe(col_analysis, use_container_width=True)
     
     def render_variant_editor(self, variants_data):
-        """Render variant quantity/price editor with extracted quantities displayed"""
+        """FIXED: Render variant editor with blank compare prices shown correctly"""
         if not variants_data.get('unique_variants'):
             return
         
@@ -762,7 +759,7 @@ class UIComponents:
                             st.caption("No data qty")
                     
                     with col3:
-                        # FIXED: Use config's default_qty
+                        # Use config's default_qty
                         config = st.session_state.get('config', {})
                         default_qty = config.get('default_qty', 10)
                         current_qty = st.session_state.variant_quantities.get(variant_key, extracted_qty if extracted_qty > 0 else default_qty)
@@ -774,20 +771,29 @@ class UIComponents:
                     
                     with col4:
                         extracted_compare_prices = variants_data.get('extracted_compare_prices', {})
-                        extracted_price = extracted_compare_prices.get(variant_key, 0.0)
+                        extracted_price = extracted_compare_prices.get(variant_key, None)
                         
-                        # Show extracted price directly in input box
+                        # FIXED: Show blank if None, otherwise show value
+                        if extracted_price is None or pd.isna(extracted_price):
+                            display_price = 0.0
+                            placeholder_text = "Blank"
+                        else:
+                            display_price = float(extracted_price)
+                            placeholder_text = None
+                        
                         new_price = st.number_input(
                             "Compare Price", 
                             min_value=0.0, 
-                            value=float(extracted_price), 
+                            value=display_price, 
                             step=0.01,
                             key=f"price_{variant_key}", 
                             label_visibility="collapsed",
-                            format="%.2f"
+                            format="%.2f",
+                            help=placeholder_text if placeholder_text else "Compare at price"
                         )
-                        # Update session state with the value
-                        st.session_state.variant_compare_prices[variant_key] = new_price
+                        
+                        # FIXED: Store None if 0, otherwise store value
+                        st.session_state.variant_compare_prices[variant_key] = new_price if new_price > 0 else None
     
     def show_final_statistics(self, df):
         """Show final statistics"""
